@@ -1,5 +1,6 @@
 # He-LMAS: Heterogeneous Latent Manifold Alignment System
-# Core ML dependenci# Core ML
+
+# Core ML
 torch>=2.0.0
 transformers>=4.40.0
 accelerate>=0.27.0
@@ -10,7 +11,7 @@ datasets>=2.18.0
 pyyaml>=6.0
 tqdm>=4.65.0
 
-# HuggingFace Hub (for model upload)
+# HuggingFace Hub
 huggingface_hub>=0.21.0
 
 # Logging
@@ -20,6 +21,3 @@ tensorboard>=2.15.0
 # Testing
 pytest>=7.4.0
 numpy>=1.24.0
-
-# Testing
-pytest>=8.0.0
