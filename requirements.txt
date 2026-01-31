@@ -1,0 +1,20 @@
+# He-LMAS: Heterogeneous Latent Manifold Alignment System
+# Core ML dependencies
+torch>=2.1.0
+transformers>=4.40.0
+accelerate>=0.27.0
+bitsandbytes>=0.42.0  # INT4/INT8 quantization
+
+# Training utilities
+pyyaml>=6.0
+tqdm>=4.66.0
+
+# Logging (optional but recommended)
+wandb>=0.16.0
+tensorboard>=2.15.0
+
+# Evaluation
+numpy>=1.24.0
+
+# Testing
+pytest>=8.0.0

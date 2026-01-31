@@ -1,0 +1,78 @@
+[
+    {
+        "id": "einstein_riddle",
+        "name": "Einstein's Logic Puzzle (State Tracking)",
+        "category": "state_tracking",
+        "difficulty": "hard",
+        "expected_1_7b": "fail",
+        "expected_8b": "pass",
+        "description": "Tests ability to track 5+ variables across many constraints. 1.7B typically mixes up constraints and hallucinates.",
+        "prompt": "There are five houses in a row, each painted a different color. In each house lives a person with a different pet, a different favorite drink, and a different favorite sport.\n\n1. The Brit lives in the red house.\n2. The Swede has a dog.\n3. The Dane drinks tea.\n4. The green house is immediately to the left of the white house.\n5. The green house owner drinks coffee.\n6. The person who plays soccer rears birds.\n7. The owner of the yellow house plays tennis.\n8. The man living in the center house drinks milk.\n9. The Norwegian lives in the first house.\n10. The tennis player lives next to the one who keeps cats.\n11. The man who keeps the horse lives next to the man who plays tennis.\n12. The owner who plays basketball drinks beer.\n13. The German plays hockey.\n14. The Norwegian lives next to the blue house.\n\nQuestion: Who owns the Fish? Walk through the deduction step-by-step.",
+        "expected_answer_contains": [
+            "German",
+            "fish"
+        ],
+        "grading": "exact_match"
+    },
+    {
+        "id": "compositional_drift",
+        "name": "Compositional Drift Math",
+        "category": "math_reasoning",
+        "difficulty": "medium",
+        "expected_1_7b": "fail",
+        "expected_8b": "pass",
+        "description": "Multi-step arithmetic with dependencies. 1.7B often calculates percentages of wrong base values.",
+        "prompt": "A specialized factory makes widgets.\n\n- On Monday, they make 500 widgets.\n- On Tuesday, they make 10% more than Monday.\n- On Wednesday, they make 15% fewer than Tuesday.\n- On Thursday, they make 50 more than the average of Monday and Wednesday.\n- On Friday, the machine breaks and produces half of Thursday's output.\n\nQuestion: How many widgets were made on Friday? Show the exact calculation for each day.",
+        "expected_answer": 262,
+        "grading": "numeric",
+        "tolerance": 1
+    },
+    {
+        "id": "negative_constraint_coding",
+        "name": "Negative Constraint Coding",
+        "category": "code_generation",
+        "difficulty": "medium",
+        "expected_1_7b": "fail",
+        "expected_8b": "pass",
+        "description": "Tests ability to follow negative constraints. 1.7B tends to ignore 'do NOT use X' instructions.",
+        "prompt": "Write a Python function to sort a list of tuples (name, age) by age in descending order.\n\nConstraint: You are strictly FORBIDDEN from using:\n- lambda\n- itemgetter\n- the .sort() method\n- the sorted() built-in function\n\nYou must implement your own sorting algorithm (like bubble sort or merge sort) from scratch. Handle edge cases where the list is empty.",
+        "forbidden_patterns": [
+            "lambda",
+            "itemgetter",
+            ".sort(",
+            "sorted("
+        ],
+        "required_patterns": [
+            "def ",
+            "for ",
+            "if "
+        ],
+        "grading": "code_constraints"
+    },
+    {
+        "id": "long_dependency_chain",
+        "name": "Long Dependency Chain",
+        "category": "math_reasoning",
+        "difficulty": "hard",
+        "expected_1_7b": "fail",
+        "expected_8b": "pass",
+        "description": "Tests ability to maintain variable bindings across 8+ steps.",
+        "prompt": "Let's define a sequence of numbers:\n\n- a₁ = 5\n- a₂ = a₁ × 3\n- a₃ = a₂ - 7\n- a₄ = a₃ × 2\n- a₅ = a₄ + a₁\n- a₆ = a₅ ÷ 2\n- a₇ = a₆ + a₃\n- a₈ = a₇ × a₁ - 100\n\nCalculate a₈. Show each step clearly.",
+        "expected_answer": 115,
+        "grading": "numeric",
+        "tolerance": 0
+    },
+    {
+        "id": "nested_conditionals",
+        "name": "Nested Conditional Logic",
+        "category": "logic",
+        "difficulty": "medium",
+        "expected_1_7b": "fail",
+        "expected_8b": "pass",
+        "description": "Tests tracking of nested if-then-else logic.",
+        "prompt": "A game has these rules for scoring:\n\n- If you roll a 6, you get 10 points.\n- If you roll a 5, you get 5 points, UNLESS your previous roll was a 6, in which case you get 15 points.\n- If you roll a 4 or less, you get 0 points, UNLESS your previous TWO rolls were both 5 or higher, in which case you get 8 points.\n- If at any point you have exactly 20 points, your score resets to 5.\n\nA player rolls: 6, 5, 4, 6, 5, 3\n\nWhat is their final score? Show the score after each roll.",
+        "expected_answer": 28,
+        "grading": "numeric",
+        "tolerance": 0
+    }
+]

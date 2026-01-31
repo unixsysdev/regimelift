@@ -1,0 +1,74 @@
+# He-LMAS Configuration
+# Heterogeneous Latent Manifold Alignment System
+
+# Model Configuration
+models:
+  teacher:
+    name: "Qwen/Qwen3-8B"
+    # Architecture specs (verified from HuggingFace)
+    layers: 36
+    hidden_dim: 4096
+    num_attention_heads: 32
+    num_kv_heads: 8
+    head_dim: 128
+    # Quantization: null (FP16), "int8", or "int4"
+    quantization: "int4"
+    device: "cuda:0"
+  
+  student:
+    name: "Qwen/Qwen3-1.7B"
+    # Architecture specs
+    layers: 28
+    hidden_dim: 2048
+    num_attention_heads: 16
+    num_kv_heads: 8
+    head_dim: 128
+    quantization: null  # Keep FP16 for training gradients
+    device: "cuda:0"
+
+# Bridge Configuration
+bridge:
+  # Layer mapping strategy: "uniform" or "learned"
+  layer_mapping: "uniform"
+  # Whether to use per-layer projectors (recommended) or shared
+  per_layer_projectors: true
+  # RoPE handling: "naive" (skip de-rotation) or "full" (de-rotate/re-rotate)
+  rope_handling: "naive"
+  # Projector initialization: "identity" or "random"
+  init_strategy: "identity"
+
+# Training Configuration
+training:
+  learning_rate: 1.0e-4
+  weight_decay: 0.01
+  batch_size: 1
+  max_steps: 10000
+  # How often to save checkpoints
+  checkpoint_every: 500
+  # How often to log metrics
+  log_every: 10
+  # Maximum tokens for teacher reasoning trace
+  max_thinking_tokens: 100
+  # Gradient accumulation steps (for effective larger batch)
+  gradient_accumulation: 4
+
+# Thinking Mode Configuration
+thinking:
+  # Token sequence that starts thinking
+  start_token: "<think>"
+  # Token sequence that ends thinking
+  end_token: "</think>"
+  # Handoff prompt appended after injection
+  handoff_prompt: "\nAnswer:"
+
+# Paths
+paths:
+  checkpoints: "checkpoints/"
+  logs: "logs/"
+  data: "data/"
+
+# Logging
+logging:
+  use_wandb: false
+  wandb_project: "he-lmas"
+  use_tensorboard: true
