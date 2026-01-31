@@ -2,7 +2,11 @@
 Model Loader for He-LMAS
 
 Handles loading Qwen3 models with proper configuration for KV cache
-extraction and injection. Supports quantization for memory efficiency.
+extraction and injection. Supports:
+- Quantization (INT4/INT8) for memory-constrained systems
+- Flash Attention 2 for datacenter GPUs (H100/H200)
+- BF16 precision for optimal H200 tensor core utilization
+- torch.compile() for kernel fusion
 """
 
 import torch
@@ -16,6 +20,26 @@ from transformers import (
 )
 import yaml
 import warnings
+
+
+def get_torch_dtype(dtype_str: Optional[str]) -> torch.dtype:
+    """
+    Convert string dtype to torch.dtype.
+    
+    Args:
+        dtype_str: "float16", "bfloat16", "float32", or None
+        
+    Returns:
+        Corresponding torch.dtype
+    """
+    if dtype_str is None or dtype_str == "float16":
+        return torch.float16
+    elif dtype_str == "bfloat16":
+        return torch.bfloat16
+    elif dtype_str == "float32":
+        return torch.float32
+    else:
+        raise ValueError(f"Unknown dtype: {dtype_str}")
 
 
 def get_quantization_config(quant_type: Optional[str]) -> Optional[BitsAndBytesConfig]:
@@ -50,33 +74,46 @@ def load_model(
     model_name: str,
     device: str = "cuda:0",
     quantization: Optional[str] = None,
+    torch_dtype: Optional[str] = None,
+    attn_implementation: Optional[str] = None,
     trust_remote_code: bool = True
 ) -> PreTrainedModel:
     """
-    Load a HuggingFace model with optional quantization.
+    Load a HuggingFace model with optional optimizations.
     
     Args:
         model_name: HuggingFace model ID (e.g., "Qwen/Qwen3-8B")
         device: Target device
         quantization: "int4", "int8", or None
+        torch_dtype: "float16", "bfloat16", or None
+        attn_implementation: "flash_attention_2", "sdpa", "eager", or None
         trust_remote_code: Whether to trust remote code (required for Qwen)
         
     Returns:
         Loaded model
     """
     quant_config = get_quantization_config(quantization)
+    dtype = get_torch_dtype(torch_dtype)
     
     load_kwargs = {
         "trust_remote_code": trust_remote_code,
-        "torch_dtype": torch.float16,
+        "torch_dtype": dtype,
     }
     
+    # Add Flash Attention 2 if specified
+    if attn_implementation is not None:
+        load_kwargs["attn_implementation"] = attn_implementation
+        if attn_implementation == "flash_attention_2":
+            print(f"  → Flash Attention 2 enabled")
+    
+    # Quantization or device map
     if quant_config is not None:
         load_kwargs["quantization_config"] = quant_config
         load_kwargs["device_map"] = device
     else:
         load_kwargs["device_map"] = device
     
+    print(f"  → Loading with dtype={dtype}, device={device}")
     model = AutoModelForCausalLM.from_pretrained(model_name, **load_kwargs)
     
     return model
@@ -221,8 +258,13 @@ class HeLMAS_ModelPair:
     """
     Container for Teacher-Student model pair with shared tokenizer.
     
+    Supports H200 optimizations:
+    - Flash Attention 2
+    - BF16 precision
+    - torch.compile() on models
+    
     Usage:
-        pair = HeLMAS_ModelPair.from_config("configs/default.yaml")
+        pair = HeLMAS_ModelPair.from_config("configs/h200.yaml")
         teacher_output = pair.teacher_generate(prompt)
         student_output = pair.student_forward(tokens, past_key_values=cache)
     """
@@ -255,6 +297,10 @@ class HeLMAS_ModelPair:
         """
         Load model pair from configuration file.
         
+        Supports H200-specific options:
+        - torch_dtype: "bfloat16" for optimal tensor core usage
+        - attn_implementation: "flash_attention_2" for faster attention
+        
         Args:
             config_path: Path to YAML config file
             
@@ -267,18 +313,27 @@ class HeLMAS_ModelPair:
         teacher_cfg = config['models']['teacher']
         student_cfg = config['models']['student']
         
+        # Check for H200-specific options
+        hardware = config.get('hardware', {})
+        if hardware.get('gpu_type') == 'H200':
+            print(f"🚀 H200 mode detected ({hardware.get('vram_gb', 141)}GB VRAM)")
+        
         print(f"Loading Teacher: {teacher_cfg['name']}...")
         teacher = load_model(
             teacher_cfg['name'],
             device=teacher_cfg.get('device', 'cuda:0'),
-            quantization=teacher_cfg.get('quantization')
+            quantization=teacher_cfg.get('quantization'),
+            torch_dtype=teacher_cfg.get('torch_dtype'),
+            attn_implementation=teacher_cfg.get('attn_implementation')
         )
         
         print(f"Loading Student: {student_cfg['name']}...")
         student = load_model(
             student_cfg['name'],
             device=student_cfg.get('device', 'cuda:0'),
-            quantization=student_cfg.get('quantization')
+            quantization=student_cfg.get('quantization'),
+            torch_dtype=student_cfg.get('torch_dtype'),
+            attn_implementation=student_cfg.get('attn_implementation')
         )
         
         # Use shared tokenizer (from Teacher, should be identical)

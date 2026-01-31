@@ -1,0 +1,90 @@
+# He-LMAS Configuration for NVIDIA H200 (141GB HBM3e)
+#
+# Optimizations:
+# - No quantization (we have 141GB!)
+# - BF16 precision (H200 has excellent BF16 tensor cores)
+# - Flash Attention 2 enabled
+# - Large batch size with gradient accumulation
+# - torch.compile() enabled for kernel fusion
+
+models:
+  teacher:
+    name: "Qwen/Qwen3-8B"
+    layers: 36
+    hidden_dim: 4096
+    num_attention_heads: 32
+    num_kv_heads: 8
+    head_dim: 128
+    quantization: null  # No quantization - we have the VRAM
+    device: "cuda:0"
+    torch_dtype: "bfloat16"  # BF16 for H200 tensor cores
+    attn_implementation: "flash_attention_2"
+
+  student:
+    name: "Qwen/Qwen3-1.7B"
+    layers: 28
+    hidden_dim: 2048
+    num_attention_heads: 16
+    num_kv_heads: 8
+    head_dim: 128
+    quantization: null  # No quantization
+    device: "cuda:0"
+    torch_dtype: "bfloat16"
+    attn_implementation: "flash_attention_2"
+
+bridge:
+  layer_mapping: "uniform"
+  per_layer_projectors: true
+  rope_handling: "naive"
+  init_strategy: "identity"
+  teacher_rope_base: 1000000.0
+  student_rope_base: 1000000.0
+  compile: true  # Enable torch.compile() on Bridge
+
+training:
+  # Core hyperparameters
+  learning_rate: 2e-4  # Can use higher LR with larger batches
+  weight_decay: 0.01
+  batch_size: 8  # H200 can handle much larger batches
+  max_steps: 10000
+  checkpoint_every: 500
+  log_every: 10
+  max_thinking_tokens: 200  # More tokens since we have VRAM
+
+  # Gradient accumulation (effective batch = 8 * 4 = 32)
+  gradient_accumulation: 4
+  warmup_steps: 200
+
+  # Loss weights (RFC: Attention Consistency)
+  attention_consistency_weight: 1.0
+  auxiliary_ce_weight: 0.1
+  consistency_layers: "all"  # Can afford to compute on all layers
+
+  # H200-specific optimizations
+  use_amp: true  # Automatic Mixed Precision
+  amp_dtype: "bfloat16"
+  compile_mode: "reduce-overhead"  # Options: default, reduce-overhead, max-autotune
+  gradient_checkpointing: false  # Not needed with 141GB
+
+thinking_mode:
+  start_token: "<think>"
+  end_token: "</think>"
+  handoff_prompt: "\nAnswer:"
+
+paths:
+  checkpoints: "checkpoints"
+  logs: "logs"
+  data: "data"
+
+logging:
+  use_wandb: true
+  wandb_project: "he-lmas-h200"
+  wandb_run_name: null  # Auto-generated
+  use_tensorboard: true
+
+# Hardware-specific settings
+hardware:
+  gpu_type: "H200"
+  vram_gb: 141
+  num_gpus: 1  # Set to >1 for multi-GPU training
+  distributed: false  # Enable for FSDP/DeepSpeed

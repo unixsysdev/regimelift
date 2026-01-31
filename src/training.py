@@ -45,6 +45,16 @@ class TrainingConfig:
     # Which layers to compute attention consistency on
     consistency_layers: str = "all"  # "all", "last", or "sample"
     
+    # H200 Optimization: Automatic Mixed Precision
+    use_amp: bool = False
+    amp_dtype: str = "bfloat16"  # "float16" or "bfloat16" (H200 prefers BF16)
+    
+    # H200 Optimization: torch.compile()
+    compile_mode: str = "default"  # "default", "reduce-overhead", "max-autotune"
+    
+    # Gradient checkpointing (save VRAM at compute cost)
+    gradient_checkpointing: bool = False
+    
     @classmethod
     def from_dict(cls, d: dict) -> "TrainingConfig":
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
@@ -198,6 +208,11 @@ class HeLMAS_Trainer:
         self.device = next(self.model_pair.student.parameters()).device
         self.bridge = self.bridge.to(self.device)
         
+        # H200 Optimization: torch.compile() on Bridge
+        if config.compile_mode and config.compile_mode != "default":
+            print(f"🔥 Compiling Bridge with mode='{config.compile_mode}'")
+            self.bridge = torch.compile(self.bridge, mode=config.compile_mode)
+        
         # Optimizer (only for bridge parameters)
         self.optimizer = AdamW(
             self.bridge.parameters(),
@@ -211,6 +226,14 @@ class HeLMAS_Trainer:
             T_max=config.max_steps,
             eta_min=config.learning_rate * 0.1
         )
+        
+        # H200 Optimization: Automatic Mixed Precision
+        self.use_amp = config.use_amp
+        self.amp_dtype = torch.bfloat16 if config.amp_dtype == "bfloat16" else torch.float16
+        self.grad_scaler = torch.amp.GradScaler(enabled=self.use_amp and config.amp_dtype == "float16")
+        
+        if self.use_amp:
+            print(f"⚡ AMP enabled with dtype={config.amp_dtype}")
         
         # Loss functions (RFC: Attention Consistency is primary)
         self.attn_consistency_loss = AttentionConsistencyLoss(normalize=True)
@@ -267,8 +290,17 @@ class HeLMAS_Trainer:
         3. Run Student with projected_cache → capture attn outputs
         4. Run Student with its own cache (native) → capture attn outputs
         5. L = ||attn_projected - attn_native||²
+        
+        H200 Optimization: Uses AMP autocast for mixed precision training.
         """
         metrics = {}
+        
+        # AMP autocast context for H200 optimization
+        amp_context = torch.amp.autocast(
+            device_type='cuda',
+            dtype=self.amp_dtype,
+            enabled=self.use_amp
+        )
         
         # === STEP 1: Teacher generates reasoning and we get KV cache ===
         with torch.no_grad():
@@ -291,8 +323,9 @@ class HeLMAS_Trainer:
         
         metrics['teacher_thinking_tokens'] = cut_pos
         
-        # === STEP 2: Bridge projects Teacher's cache ===
-        projected_cache = self.bridge(sliced_cache)
+        # === STEP 2: Bridge projects Teacher's cache (AMP enabled) ===
+        with amp_context:
+            projected_cache = self.bridge(sliced_cache)
         projected_cache_tuple = tuple(projected_cache)
         
         # === STEP 3: Prepare query tokens ===
@@ -304,16 +337,17 @@ class HeLMAS_Trainer:
             return_tensors="pt"
         ).to(self.device)
         
-        # === STEP 4: Forward pass with PROJECTED cache ===
+        # === STEP 4: Forward pass with PROJECTED cache (AMP enabled) ===
         layer_indices = self._get_layer_indices()
         self.attn_hook.attach(self.model_pair.student, layer_indices)
         
-        outputs_projected = self.model_pair.student(
-            input_ids=query_ids,
-            past_key_values=projected_cache_tuple,
-            use_cache=True,
-            output_attentions=False  # We use hooks instead
-        )
+        with amp_context:
+            outputs_projected = self.model_pair.student(
+                input_ids=query_ids,
+                past_key_values=projected_cache_tuple,
+                use_cache=True,
+                output_attentions=False  # We use hooks instead
+            )
         
         attn_outputs_projected = self.attn_hook.get_outputs()
         self.attn_hook.clear()
@@ -385,13 +419,17 @@ class HeLMAS_Trainer:
         )
         metrics['total_loss'] = total_loss.item()
         
-        # === STEP 9: Backward and optimize ===
+        # === STEP 9: Backward and optimize (with GradScaler for AMP) ===
         total_loss = total_loss / self.config.gradient_accumulation
-        total_loss.backward()
+        
+        # Use GradScaler for FP16 AMP, direct backward for BF16
+        self.grad_scaler.scale(total_loss).backward()
         
         if (self.state.step + 1) % self.config.gradient_accumulation == 0:
+            self.grad_scaler.unscale_(self.optimizer)
             torch.nn.utils.clip_grad_norm_(self.bridge.parameters(), max_norm=1.0)
-            self.optimizer.step()
+            self.grad_scaler.step(self.optimizer)
+            self.grad_scaler.update()
             self.scheduler.step()
             self.optimizer.zero_grad()
             metrics['lr'] = self.scheduler.get_last_lr()[0]
