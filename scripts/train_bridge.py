@@ -5,8 +5,17 @@ He-LMAS Bridge Training Script
 Train the Heterogeneous Bridge to project KV caches from Qwen3-8B to Qwen3-1.7B.
 
 Usage:
-    python scripts/train_bridge.py --config configs/default.yaml
-    python scripts/train_bridge.py --config configs/default.yaml --max-steps 1000 --dry-run
+    # Quick test with sample prompts
+    python scripts/train_bridge.py --config configs/default.yaml --dry-run
+    
+    # Full training with GSM8K (downloads automatically)
+    python scripts/train_bridge.py --config configs/h200.yaml --dataset gsm8k
+    
+    # Full training with OpenMathInstruct-2
+    python scripts/train_bridge.py --config configs/h200.yaml --dataset openmath --max-samples 100000
+    
+    # Resume from checkpoint
+    python scripts/train_bridge.py --config configs/h200.yaml --checkpoint checkpoints/bridge_step_5000.pt
 """
 
 import argparse
@@ -16,10 +25,11 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.training import HeLMAS_Trainer, simple_prompt_iterator, create_thinking_prompt
+from src.training import HeLMAS_Trainer, create_thinking_prompt
+from src.data_loader import create_data_iterator, get_training_data
 
 
-# Sample prompts for training (replace with proper dataset)
+# Sample prompts for dry-run testing
 SAMPLE_PROMPTS = [
     "Solve for x: 3x + 5 = 20. Show your work step by step.",
     "A train travels at 60 mph for 2 hours, then 80 mph for 1.5 hours. What is the total distance?",
@@ -59,27 +69,38 @@ def parse_args():
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Run a few steps to verify setup"
+        help="Run 5 steps with sample prompts to verify setup"
+    )
+    
+    # Dataset options
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        choices=["gsm8k", "openmath", "metamath", "math", "sample"],
+        default="sample",
+        help="Dataset to train on (default: sample prompts)"
+    )
+    parser.add_argument(
+        "--max-samples",
+        type=int,
+        default=None,
+        help="Limit dataset size (useful for openmath which has 14M samples)"
     )
     parser.add_argument(
         "--prompts-file",
         type=str,
         default=None,
-        help="Path to file with training prompts (one per line)"
+        help="Path to file with training prompts (one per line, overrides --dataset)"
     )
+    
     return parser.parse_args()
 
 
-def load_prompts(prompts_file: str = None) -> list:
-    """Load training prompts from file or use samples."""
-    if prompts_file is not None:
-        with open(prompts_file, 'r') as f:
-            prompts = [line.strip() for line in f if line.strip()]
-        print(f"Loaded {len(prompts)} prompts from {prompts_file}")
-        return prompts
-    
-    print(f"Using {len(SAMPLE_PROMPTS)} sample prompts (provide --prompts-file for real training)")
-    return SAMPLE_PROMPTS
+def create_sample_iterator():
+    """Create infinite iterator over sample prompts."""
+    while True:
+        for prompt in SAMPLE_PROMPTS:
+            yield create_thinking_prompt(prompt)
 
 
 def main():
@@ -89,41 +110,66 @@ def main():
     print("He-LMAS Bridge Training")
     print("=" * 60)
     
-    # Load prompts
-    prompts = load_prompts(args.prompts_file)
-    
-    # Wrap prompts in thinking format
-    formatted_prompts = [create_thinking_prompt(p) for p in prompts]
+    # Determine data source
+    if args.dry_run:
+        print("\n[DRY RUN] Using sample prompts, 5 steps only")
+        data_iterator = create_sample_iterator()
+        max_steps = 5
+    elif args.prompts_file:
+        # Load from custom file
+        print(f"\nLoading prompts from: {args.prompts_file}")
+        with open(args.prompts_file, 'r') as f:
+            prompts = [line.strip() for line in f if line.strip()]
+        print(f"  Loaded {len(prompts)} prompts")
+        
+        def file_iterator():
+            while True:
+                for p in prompts:
+                    yield create_thinking_prompt(p)
+        
+        data_iterator = file_iterator()
+        max_steps = args.max_steps
+    elif args.dataset == "sample":
+        # Use built-in sample prompts
+        print("\nUsing sample prompts (use --dataset for real training)")
+        data_iterator = create_sample_iterator()
+        max_steps = args.max_steps
+    else:
+        # Use HuggingFace dataset
+        print(f"\n📊 Loading dataset: {args.dataset}")
+        if args.max_samples:
+            print(f"   Max samples: {args.max_samples}")
+        
+        data_iterator = get_training_data(
+            dataset=args.dataset,
+            max_samples=args.max_samples
+        )
+        max_steps = args.max_steps
     
     # Create trainer
-    print(f"\nLoading models from config: {args.config}")
+    print(f"\n🔧 Loading models from config: {args.config}")
     trainer = HeLMAS_Trainer.from_config(args.config)
     
     # Resume from checkpoint if specified
     if args.checkpoint:
         trainer.load_checkpoint(args.checkpoint)
     
-    # Dry run mode
-    if args.dry_run:
-        print("\n[DRY RUN] Running 5 steps to verify setup...")
-        max_steps = 5
-    else:
-        max_steps = args.max_steps
-    
-    # Create infinite iterator over prompts (cycle through)
-    def infinite_prompts():
-        while True:
-            for p in formatted_prompts:
-                yield p
-    
     # Train
+    print("\n" + "=" * 60)
+    print("Starting Training")
+    print("=" * 60)
+    
     try:
-        trainer.train(infinite_prompts(), max_steps=max_steps)
+        trainer.train(data_iterator, max_steps=max_steps)
     except KeyboardInterrupt:
-        print("\nTraining interrupted. Saving checkpoint...")
+        print("\n\n⚠️  Training interrupted. Saving checkpoint...")
         trainer.save_checkpoint(final=True)
     
-    print("\nTraining complete!")
+    print("\n✅ Training complete!")
+    print(f"   Checkpoints saved to: {trainer.checkpoint_dir}")
+    print("\n   Next steps:")
+    print("   1. Run inference demo: python scripts/inference_demo.py")
+    print("   2. Push to HuggingFace: ./scripts/push_to_hf.sh")
 
 
 if __name__ == "__main__":
