@@ -45,6 +45,10 @@ bridge:
   rope_handling: "full"
   teacher_rope_base: 1000000.0
   student_rope_base: 1000000.0
+  
+  # Layer blending: "skip", "blend" (Conv1d), or "attention" (global pooling)
+  layer_blending: "attention"
+  blend_kernel_size: 3
 
 # Training Configuration
 training:

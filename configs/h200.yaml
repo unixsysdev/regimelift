@@ -50,6 +50,13 @@ bridge:
   # naive: Skip de-rotation (OK when Teacher/Student share same theta)
   # full: De-rotate Teacher → Project → Re-rotate Student (required for cross-family)
   rope_handling: "full"
+  
+  # Layer blending: how to compress 36 Teacher layers to 28 Student layers
+  # skip: Uniform stride selection (fast, loses some info)
+  # blend: Conv1d smooth blending (local, ~10K params)
+  # attention: Global attention pooling (learns which layers matter, ~2K params)
+  layer_blending: "attention"
+  blend_kernel_size: 3  # Only for blend mode
 
 training:
   # Core hyperparameters

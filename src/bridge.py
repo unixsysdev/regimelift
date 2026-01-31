@@ -135,6 +135,222 @@ class DeepProjector(nn.Module):
         return self.layers(x)
 
 
+class LayerBlender(nn.Module):
+    """
+    Learnable layer blending using 1D convolution.
+    
+    Instead of skipping Teacher layers, we smoothly blend adjacent layers
+    using a learned convolution. This preserves information from all 36
+    Teacher layers while producing 28 Student layers.
+    
+    Architecture:
+        - Input: 36 Teacher layer representations
+        - Conv1d with kernel_size=3, learns local blending weights
+        - Output: 28 Student layer representations
+    
+    The convolution learns which adjacent layers to blend for each
+    Student position. Kernel size 3 means each output blends ~3 input layers.
+    """
+    
+    def __init__(
+        self,
+        teacher_layers: int = 36,
+        student_layers: int = 28,
+        head_dim: int = 128,
+        kernel_size: int = 3
+    ):
+        super().__init__()
+        
+        self.teacher_layers = teacher_layers
+        self.student_layers = student_layers
+        self.kernel_size = kernel_size
+        
+        # We need to go from 36 → 28 layers
+        # Using interpolation + conv for smooth blending
+        # 
+        # Strategy:
+        # 1. Stack all 36 layers: [batch, 36, head_dim]
+        # 2. Conv1d to blend: [batch, 36, head_dim] → [batch, 28, head_dim]
+        
+        # Padding to keep dimensions aligned
+        padding = kernel_size // 2
+        
+        # Learnable blending convolution
+        # Input channels = output channels = head_dim (convolve across layer dim)
+        self.blend_k = nn.Conv1d(
+            in_channels=teacher_layers,
+            out_channels=student_layers,
+            kernel_size=kernel_size,
+            padding=padding,
+            bias=False
+        )
+        self.blend_v = nn.Conv1d(
+            in_channels=teacher_layers,
+            out_channels=student_layers,
+            kernel_size=kernel_size,
+            padding=padding,
+            bias=False
+        )
+        
+        # Initialize to approximate uniform blending
+        self._init_weights()
+    
+    def _init_weights(self):
+        """Initialize conv weights for smooth blending."""
+        with torch.no_grad():
+            # Initialize as averaging kernel
+            # Each output layer gets equal contribution from nearby input layers
+            for conv in [self.blend_k, self.blend_v]:
+                nn.init.constant_(conv.weight, 1.0 / self.kernel_size)
+    
+    def forward(
+        self,
+        teacher_cache: List[Tuple[torch.Tensor, torch.Tensor]]
+    ) -> List[Tuple[torch.Tensor, torch.Tensor]]:
+        """
+        Blend Teacher layers to produce Student layer count.
+        
+        Args:
+            teacher_cache: List of 36 (K, V) tuples
+                          Each K/V: [batch, heads, seq, head_dim]
+        
+        Returns:
+            List of 28 blended (K, V) tuples
+        """
+        # Stack K and V tensors: [batch, heads, seq, head_dim, 36]
+        # We need to convolve along the layer dimension
+        
+        ks = torch.stack([kv[0] for kv in teacher_cache], dim=-1)  # [B, H, S, D, 36]
+        vs = torch.stack([kv[1] for kv in teacher_cache], dim=-1)  # [B, H, S, D, 36]
+        
+        batch, heads, seq, dim, layers = ks.shape
+        
+        # Reshape for conv: [B*H*S, D, 36] → conv → [B*H*S, D, 28]
+        ks_flat = ks.reshape(batch * heads * seq, dim, layers)
+        vs_flat = vs.reshape(batch * heads * seq, dim, layers)
+        
+        # Conv expects [batch, in_channels, length]
+        # We have [B*H*S, D, 36], conv is [36, 28, kernel]
+        # Need to transpose to [B*H*S, 36, D], conv, then back
+        ks_flat = ks_flat.transpose(1, 2)  # [B*H*S, 36, D]
+        vs_flat = vs_flat.transpose(1, 2)  # [B*H*S, 36, D]
+        
+        ks_blend = self.blend_k(ks_flat)  # [B*H*S, 28, D]
+        vs_blend = self.blend_v(vs_flat)  # [B*H*S, 28, D]
+        
+        # Transpose back and reshape
+        ks_blend = ks_blend.transpose(1, 2)  # [B*H*S, D, 28]
+        vs_blend = vs_blend.transpose(1, 2)  # [B*H*S, D, 28]
+        
+        ks_blend = ks_blend.reshape(batch, heads, seq, dim, self.student_layers)
+        vs_blend = vs_blend.reshape(batch, heads, seq, dim, self.student_layers)
+        
+        # Unstack to list of tuples
+        blended_cache = []
+        for i in range(self.student_layers):
+            k_i = ks_blend[..., i]  # [B, H, S, D]
+            v_i = vs_blend[..., i]  # [B, H, S, D]
+            blended_cache.append((k_i, v_i))
+        
+        return blended_cache
+
+
+class AttentionLayerPooler(nn.Module):
+    """
+    Attention-based layer pooling.
+    
+    Each Student layer learns to attend over ALL Teacher layers with
+    learnable weights. This is more flexible than Conv1d as it can
+    learn non-local relationships (e.g., Student layer 0 might attend
+    strongly to Teacher layer 15).
+    
+    Architecture:
+        - Learnable attention weights: [28, 36] per K and V
+        - Softmax over Teacher dimension → weighted sum
+        
+    Params: 28 * 36 * 2 = ~2K parameters (very lightweight)
+    """
+    
+    def __init__(
+        self,
+        teacher_layers: int = 36,
+        student_layers: int = 28,
+        temperature: float = 1.0
+    ):
+        super().__init__()
+        
+        self.teacher_layers = teacher_layers
+        self.student_layers = student_layers
+        self.temperature = temperature
+        
+        # Learnable attention logits: [student_layers, teacher_layers]
+        # After softmax: each Student layer has weights over all Teacher layers
+        self.attn_logits_k = nn.Parameter(torch.zeros(student_layers, teacher_layers))
+        self.attn_logits_v = nn.Parameter(torch.zeros(student_layers, teacher_layers))
+        
+        # Initialize with uniform stride prior
+        self._init_with_stride_prior()
+    
+    def _init_with_stride_prior(self):
+        """Initialize attention to focus on corresponding stride positions."""
+        with torch.no_grad():
+            for i in range(self.student_layers):
+                # Target Teacher layer for this Student layer
+                target = i * self.teacher_layers / self.student_layers
+                
+                # Initialize with Gaussian centered on target
+                for j in range(self.teacher_layers):
+                    dist = abs(j - target)
+                    self.attn_logits_k[i, j] = -dist  # Closer = higher
+                    self.attn_logits_v[i, j] = -dist
+    
+    def get_attention_weights(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Get softmax attention weights for visualization."""
+        attn_k = torch.softmax(self.attn_logits_k / self.temperature, dim=-1)
+        attn_v = torch.softmax(self.attn_logits_v / self.temperature, dim=-1)
+        return attn_k, attn_v
+    
+    def forward(
+        self,
+        teacher_cache: List[Tuple[torch.Tensor, torch.Tensor]]
+    ) -> List[Tuple[torch.Tensor, torch.Tensor]]:
+        """
+        Pool Teacher layers using learned attention weights.
+        
+        Args:
+            teacher_cache: List of 36 (K, V) tuples
+                          Each K/V: [batch, heads, seq, head_dim]
+        
+        Returns:
+            List of 28 pooled (K, V) tuples
+        """
+        # Stack: [B, H, S, D, 36]
+        ks = torch.stack([kv[0] for kv in teacher_cache], dim=-1)
+        vs = torch.stack([kv[1] for kv in teacher_cache], dim=-1)
+        
+        # Compute attention weights: [28, 36]
+        attn_k = torch.softmax(self.attn_logits_k / self.temperature, dim=-1)
+        attn_v = torch.softmax(self.attn_logits_v / self.temperature, dim=-1)
+        
+        # Move to same device
+        attn_k = attn_k.to(ks.device)
+        attn_v = attn_v.to(vs.device)
+        
+        # Weighted sum over Teacher layers
+        # ks: [B, H, S, D, 36] @ attn_k.T: [36, 28] → [B, H, S, D, 28]
+        ks_pooled = torch.einsum('bhsdl,sl->bhsds', ks, attn_k.T)
+        vs_pooled = torch.einsum('bhsdl,sl->bhsds', vs, attn_v.T)
+        
+        # Unstack
+        pooled_cache = []
+        for i in range(self.student_layers):
+            k_i = ks_pooled[..., i]
+            v_i = vs_pooled[..., i]
+            pooled_cache.append((k_i, v_i))
+        
+        return pooled_cache
+
+
 class HeLMAS_Bridge(nn.Module):
     """
     The Heterogeneous Latent Manifold Alignment Bridge.
@@ -144,9 +360,9 @@ class HeLMAS_Bridge(nn.Module):
     Architecture (Qwen3-8B → Qwen3-1.7B):
         - Teacher: 36 layers, 8 KV heads, head_dim=128
         - Student: 28 layers, 8 KV heads, head_dim=128
-        - Layer mapping: Uniform stride (select 28 from 36)
+        - Layer blending: Conv1d smooth compression (36 → 28)
         - Head mapping: 1:1 (both have 8 KV heads)
-        - Dimension: May need projection if head_dim differs
+        - Dimension: Projected through learned transform
     
     Args:
         teacher_layers: Number of layers in Teacher model
@@ -159,6 +375,7 @@ class HeLMAS_Bridge(nn.Module):
         init_strategy: "identity" or "random"
         projector_depth: 1=shallow linear, 2+=deep with hidden layers
         hidden_expansion: Hidden dim = head_dim * hidden_expansion (for deep)
+        layer_blending: "skip" (uniform stride) or "blend" (conv smooth) 
     """
     
     def __init__(
@@ -175,7 +392,9 @@ class HeLMAS_Bridge(nn.Module):
         student_rope_base: float = 1000000.0,
         max_seq_len: int = 32768,
         projector_depth: int = 1,
-        hidden_expansion: float = 2.0
+        hidden_expansion: float = 2.0,
+        layer_blending: Literal["skip", "blend", "attention"] = "attention",
+        blend_kernel_size: int = 3
     ):
         super().__init__()
         
@@ -187,13 +406,34 @@ class HeLMAS_Bridge(nn.Module):
         self.rope_handling = rope_handling
         self.per_layer = per_layer
         self.projector_depth = projector_depth
+        self.layer_blending = layer_blending
         
-        # Compute layer mapping: which Teacher layer maps to which Student layer
-        # Using uniform stride: layer_map[i] = round(i * teacher_layers / student_layers)
-        self.register_buffer(
-            'layer_map',
-            torch.linspace(0, teacher_layers - 1, student_layers).round().long()
-        )
+        # Layer blending/mapping
+        if layer_blending == "blend":
+            # Learnable Conv1d blender for smooth layer compression
+            self.layer_blender = LayerBlender(
+                teacher_layers=teacher_layers,
+                student_layers=student_layers,
+                head_dim=teacher_head_dim,
+                kernel_size=blend_kernel_size
+            )
+            print(f"  → Layer blending: Conv1d (kernel={blend_kernel_size})")
+        elif layer_blending == "attention":
+            # Learnable attention pooling over all Teacher layers
+            self.layer_blender = AttentionLayerPooler(
+                teacher_layers=teacher_layers,
+                student_layers=student_layers,
+                temperature=1.0
+            )
+            print(f"  → Layer blending: Attention pooling (global)")
+        else:  # "skip"
+            # Simple skip mapping (uniform stride)
+            self.layer_blender = None
+            self.register_buffer(
+                'layer_map',
+                torch.linspace(0, teacher_layers - 1, student_layers).round().long()
+            )
+            print(f"  → Layer mapping: Skip (uniform stride)")
         
         # Hidden dimension for deep projectors
         hidden_dim = int(teacher_head_dim * hidden_expansion)
@@ -272,10 +512,11 @@ class HeLMAS_Bridge(nn.Module):
         """
         Project Teacher's KV cache to Student's geometry.
         
-        Full RoPE flow:
-        1. De-rotate Teacher's K using Teacher's RoPE (undo position encoding)
-        2. Project K and V through learned projectors
-        3. Re-rotate Student's K using Student's RoPE (apply new position encoding)
+        Flow:
+        1. Layer blending: 36 Teacher layers → 28 Student layers (blend/attention/skip)
+        2. De-rotate Teacher's K using Teacher's RoPE (full mode only)
+        3. Project K and V through learned projectors
+        4. Re-rotate Student's K using Student's RoPE (full mode only)
         
         Args:
             teacher_cache: List of (K, V) tuples from Teacher
@@ -285,12 +526,22 @@ class HeLMAS_Bridge(nn.Module):
         Returns:
             Projected KV cache for Student (same format, different shapes)
         """
+        # === STEP 1: Layer blending (36 → 28) ===
+        if self.layer_blender is not None:
+            # Use learnable blender (Conv1d or Attention)
+            blended_cache = self.layer_blender(teacher_cache)
+        else:
+            # Simple skip mapping
+            blended_cache = [
+                teacher_cache[self.layer_map[i].item()]
+                for i in range(self.student_layers)
+            ]
+        
+        # === STEPS 2-4: RoPE de-rotation, projection, RoPE re-rotation ===
         student_cache: KVCache = []
         
         for i in range(self.student_layers):
-            # Get the corresponding Teacher layer
-            teacher_idx = self.layer_map[i].item()
-            k_t, v_t = teacher_cache[teacher_idx]
+            k_t, v_t = blended_cache[i]
             
             # Move to same device as projector weights
             proj_device = self._get_proj_device(i)
@@ -304,16 +555,12 @@ class HeLMAS_Bridge(nn.Module):
             else:
                 position_ids_local = position_ids.to(proj_device)
             
-            # === STEP 1: De-rotate Teacher's K (Full RoPE mode) ===
-            # This removes the Teacher's positional encoding, exposing
-            # the "raw" semantic features for projection
+            # === STEP 2: De-rotate Teacher's K (Full RoPE mode) ===
             if self.rope_handling == "full" and self.teacher_rope is not None:
                 self.teacher_rope.to(proj_device)
                 k_t = self.teacher_rope.derotate(k_t, position_ids_local)
-                # Note: V is NOT rotated in standard RoPE
             
-            # === STEP 2: Project dimensions through learned transform ===
-            # k_t: [batch, heads, seq, head_dim_t] → [batch, heads, seq, head_dim_s]
+            # === STEP 3: Project dimensions through learned transform ===
             if self.per_layer:
                 k_s = self.k_proj[i](k_t)
                 v_s = self.v_proj[i](v_t)
@@ -321,10 +568,7 @@ class HeLMAS_Bridge(nn.Module):
                 k_s = self.k_proj(k_t)
                 v_s = self.v_proj(v_t)
             
-            # === STEP 3: Re-rotate with Student's RoPE (Full mode) ===
-            # This applies the Student's positional encoding to the
-            # projected features, so they integrate correctly with
-            # the Student's own attention computation
+            # === STEP 4: Re-rotate with Student's RoPE (Full mode) ===
             if self.rope_handling == "full" and self.student_rope is not None:
                 self.student_rope.to(proj_device)
                 k_s = self.student_rope.rotate(k_s, position_ids_local)
@@ -428,11 +672,13 @@ def create_bridge_from_config(config: dict) -> HeLMAS_Bridge:
         teacher_head_dim=teacher['head_dim'],
         student_head_dim=student['head_dim'],
         num_kv_heads=teacher['num_kv_heads'],  # Assumes both match
-        rope_handling=bridge.get('rope_handling', 'naive'),
+        rope_handling=bridge.get('rope_handling', 'full'),
         per_layer=bridge.get('per_layer_projectors', True),
         init_strategy=bridge.get('init_strategy', 'identity'),
         teacher_rope_base=bridge.get('teacher_rope_base', 1000000.0),
         student_rope_base=bridge.get('student_rope_base', 1000000.0),
-        projector_depth=bridge.get('projector_depth', 1),
-        hidden_expansion=bridge.get('hidden_expansion', 2.0)
+        projector_depth=bridge.get('projector_depth', 2),
+        hidden_expansion=bridge.get('hidden_expansion', 2.0),
+        layer_blending=bridge.get('layer_blending', 'attention'),
+        blend_kernel_size=bridge.get('blend_kernel_size', 3)
     )
