@@ -32,10 +32,19 @@ bridge:
   layer_mapping: "uniform"
   # Whether to use per-layer projectors (recommended) or shared
   per_layer_projectors: true
-  # RoPE handling: "naive" (skip de-rotation) or "full" (de-rotate/re-rotate)
-  rope_handling: "naive"
   # Projector initialization: "identity" or "random"
   init_strategy: "identity"
+  
+  # Projector architecture
+  # depth=1: Shallow linear projector (~1.8M params)
+  # depth=2+: Deep projector with hidden layers (~3.6M+ params)
+  projector_depth: 2
+  hidden_expansion: 2.0
+  
+  # RoPE handling: "naive" (skip) or "full" (de-rotate/re-rotate)
+  rope_handling: "full"
+  teacher_rope_base: 1000000.0
+  student_rope_base: 1000000.0
 
 # Training Configuration
 training:

@@ -35,11 +35,21 @@ models:
 bridge:
   layer_mapping: "uniform"
   per_layer_projectors: true
-  rope_handling: "naive"
   init_strategy: "identity"
   teacher_rope_base: 1000000.0
   student_rope_base: 1000000.0
-  compile: true  # Enable torch.compile() on Bridge
+  
+  # Deep projector for more learning capacity
+  # depth=1: Shallow (Linear only, ~1.8M params)
+  # depth=2: Deep (Linear→GELU→Linear, ~3.6M params)
+  # depth=3: Deeper (Linear→GELU→Linear→GELU→Linear, ~5.4M params)
+  projector_depth: 2
+  hidden_expansion: 2.0  # hidden_dim = head_dim * expansion
+  
+  # RoPE handling
+  # naive: Skip de-rotation (OK when Teacher/Student share same theta)
+  # full: De-rotate Teacher → Project → Re-rotate Student (required for cross-family)
+  rope_handling: "full"
 
 training:
   # Core hyperparameters
