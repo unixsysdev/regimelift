@@ -52,6 +52,10 @@ class TrainingConfig:
     handoff_mode: str = "prompt"
     handoff_prompt: str = "\nAnswer:"
     
+    # Validation: run evaluation on held-out set
+    eval_every: int = 1000  # Run validation every N steps (0 to disable)
+    eval_samples: int = 50  # Number of samples for validation
+    
     # H200 Optimization: Automatic Mixed Precision
     use_amp: bool = False
     amp_dtype: str = "bfloat16"  # "float16" or "bfloat16" (H200 prefers BF16)
@@ -88,6 +92,9 @@ class AttentionConsistencyLoss(nn.Module):
     
     Intuition: "The Student should see the same 'Context Vector' when looking
     at the Projected memory as it would if it had correctly computed the memory itself."
+    
+    IMPORTANT: With batch_size > 1, we must mask out padding tokens to avoid
+    the model learning to match zeros on padding positions.
     """
     
     def __init__(self, normalize: bool = True):
@@ -97,27 +104,49 @@ class AttentionConsistencyLoss(nn.Module):
     def forward(
         self,
         attn_output_projected: torch.Tensor,
-        attn_output_native: torch.Tensor
+        attn_output_native: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
-        Compute attention consistency loss.
+        Compute attention consistency loss with optional masking.
         
         Args:
             attn_output_projected: Attention output using projected KV cache
                                    Shape: [batch, seq, hidden] or [batch, heads, seq, head_dim]
             attn_output_native: Attention output using Student's native KV cache
                                 Shape: same as above
+            attention_mask: Optional mask [batch, seq] where 1=real token, 0=padding
+                           CRITICAL for batch_size > 1 to avoid learning on padding
         
         Returns:
-            L2 loss between the attention outputs
+            L2 loss between the attention outputs (masked if attention_mask provided)
         """
         if self.normalize:
             # Normalize to unit vectors for stable gradients
             attn_output_projected = nn.functional.normalize(attn_output_projected, dim=-1)
             attn_output_native = nn.functional.normalize(attn_output_native, dim=-1)
         
-        # L2 loss (MSE)
-        loss = nn.functional.mse_loss(attn_output_projected, attn_output_native)
+        # Compute per-element squared error
+        squared_error = (attn_output_projected - attn_output_native) ** 2
+        
+        if attention_mask is not None:
+            # Expand mask to match tensor dimensions
+            # Input mask: [batch, seq] → expand to [batch, seq, 1, 1] or similar
+            while attention_mask.dim() < squared_error.dim():
+                attention_mask = attention_mask.unsqueeze(-1)
+            
+            # Zero out loss on padding positions
+            squared_error = squared_error * attention_mask.float()
+            
+            # Mean over non-padding tokens only
+            num_real_elements = attention_mask.sum() * squared_error.shape[-1]
+            if num_real_elements > 0:
+                loss = squared_error.sum() / num_real_elements
+            else:
+                loss = squared_error.sum()  # Fallback (shouldn't happen)
+        else:
+            # No mask: simple mean (batch_size=1 case)
+            loss = squared_error.mean()
         
         return loss
 
@@ -199,13 +228,15 @@ class HeLMAS_Trainer:
         bridge: HeLMAS_Bridge,
         config: TrainingConfig,
         checkpoint_dir: str = "checkpoints",
-        log_dir: str = "logs"
+        log_dir: str = "logs",
+        eval_data: Optional[List[Tuple[str, str]]] = None
     ):
         self.model_pair = model_pair
         self.bridge = bridge
         self.config = config
         self.checkpoint_dir = Path(checkpoint_dir)
         self.log_dir = Path(log_dir)
+        self.eval_data = eval_data  # List of (question, answer) for validation
         
         # Create directories
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -525,6 +556,23 @@ class HeLMAS_Trainer:
                 # Checkpointing
                 if self.state.step % self.config.checkpoint_every == 0:
                     self.save_checkpoint()
+                
+                # Validation evaluation
+                if (self.config.eval_every > 0 and 
+                    self.state.step % self.config.eval_every == 0 and
+                    self.eval_data is not None):
+                    
+                    print(f"\n📊 Running validation on {min(len(self.eval_data), self.config.eval_samples)} samples...")
+                    eval_subset = self.eval_data[:self.config.eval_samples]
+                    eval_results = self.evaluate(eval_subset, verbose=False)
+                    
+                    print(
+                        f"  With Bridge: {eval_results['with_bridge_accuracy']:.1%} "
+                        f"({eval_results['with_bridge_correct']}/{eval_results['total']})\n"
+                        f"  Without Bridge: {eval_results['without_bridge_accuracy']:.1%} "
+                        f"({eval_results['without_bridge_correct']}/{eval_results['total']})\n"
+                        f"  Improvement: {eval_results['improvement']:+.1%}\n"
+                    )
                     
             except Exception as e:
                 print(f"Error at step {self.state.step}: {e}")
@@ -560,6 +608,188 @@ class HeLMAS_Trainer:
         self.state = TrainingState(**checkpoint['state'])
         
         print(f"Loaded checkpoint from {path} (step {self.state.step})")
+    
+    @torch.no_grad()
+    def evaluate(
+        self,
+        eval_prompts: List[Tuple[str, str]],
+        max_new_tokens: int = 256,
+        verbose: bool = False
+    ) -> dict:
+        """
+        Evaluate Bridge effectiveness on held-out problems.
+        
+        Tests if Student with injected Teacher reasoning can solve problems
+        better than Student alone. This is the ground-truth metric that
+        matters more than consistency loss.
+        
+        Args:
+            eval_prompts: List of (question, ground_truth_answer) tuples
+            max_new_tokens: Max tokens for Student generation
+            verbose: Print individual results
+            
+        Returns:
+            Dict with accuracy metrics:
+            - with_bridge_accuracy: Accuracy using projected Teacher cache
+            - without_bridge_accuracy: Student alone baseline
+            - improvement: Absolute improvement
+        """
+        self.bridge.eval()
+        
+        with_bridge_correct = 0
+        without_bridge_correct = 0
+        total = 0
+        
+        for question, ground_truth in eval_prompts:
+            total += 1
+            prompt = create_thinking_prompt(question)
+            
+            # === Student WITH Bridge (injected Teacher reasoning) ===
+            try:
+                # 1. Teacher generates reasoning
+                teacher_ids, teacher_cache = self.model_pair.teacher_generate(
+                    prompt,
+                    max_new_tokens=self.config.max_thinking_tokens
+                )
+                
+                # 2. Extract and slice cache at </think>
+                teacher_cache = extract_kv_cache(
+                    type('Output', (), {'past_key_values': teacher_cache})()
+                )
+                sliced_cache, _ = slice_cache_at_token(
+                    teacher_cache,
+                    teacher_ids,
+                    self.model_pair.tokenizer,
+                    end_token="</think>",
+                    include_end_token=True
+                )
+                
+                # 3. Project through Bridge
+                with torch.amp.autocast(device_type='cuda', dtype=self.amp_dtype, enabled=self.use_amp):
+                    projected_cache = self.bridge(sliced_cache)
+                projected_cache_tuple = tuple(projected_cache)
+                
+                # 4. Student generates answer with injected cache
+                query_text = self.config.handoff_prompt
+                query_ids = self.model_pair.tokenizer.encode(
+                    query_text,
+                    add_special_tokens=False,
+                    return_tensors="pt"
+                ).to(self.device)
+                
+                outputs = self.model_pair.student.generate(
+                    query_ids,
+                    past_key_values=projected_cache_tuple,
+                    max_new_tokens=max_new_tokens,
+                    do_sample=False,
+                    pad_token_id=self.model_pair.tokenizer.pad_token_id
+                )
+                
+                with_bridge_answer = self.model_pair.tokenizer.decode(
+                    outputs[0], skip_special_tokens=True
+                )
+                
+                # Extract and compare answer
+                with_bridge_num = extract_numeric_answer(with_bridge_answer)
+                gt_num = extract_numeric_answer(ground_truth)
+                
+                if with_bridge_num is not None and gt_num is not None:
+                    if abs(with_bridge_num - gt_num) < 0.001:
+                        with_bridge_correct += 1
+                
+            except Exception as e:
+                if verbose:
+                    print(f"Error (with bridge): {e}")
+            
+            # === Student WITHOUT Bridge (baseline) ===
+            try:
+                student_prompt = f"""<|im_start|>user
+{question}<|im_end|>
+<|im_start|>assistant
+"""
+                input_ids = self.model_pair.tokenizer.encode(
+                    student_prompt,
+                    return_tensors="pt"
+                ).to(self.device)
+                
+                outputs = self.model_pair.student.generate(
+                    input_ids,
+                    max_new_tokens=max_new_tokens,
+                    do_sample=False,
+                    pad_token_id=self.model_pair.tokenizer.pad_token_id
+                )
+                
+                without_bridge_answer = self.model_pair.tokenizer.decode(
+                    outputs[0][len(input_ids[0]):], skip_special_tokens=True
+                )
+                
+                without_bridge_num = extract_numeric_answer(without_bridge_answer)
+                
+                if without_bridge_num is not None and gt_num is not None:
+                    if abs(without_bridge_num - gt_num) < 0.001:
+                        without_bridge_correct += 1
+                
+            except Exception as e:
+                if verbose:
+                    print(f"Error (without bridge): {e}")
+            
+            if verbose:
+                print(f"Q: {question[:50]}...")
+                print(f"  GT: {ground_truth}")
+                print(f"  With Bridge: {with_bridge_num} | Without: {without_bridge_num}")
+        
+        self.bridge.train()
+        
+        with_acc = with_bridge_correct / max(total, 1)
+        without_acc = without_bridge_correct / max(total, 1)
+        
+        return {
+            'with_bridge_accuracy': with_acc,
+            'without_bridge_accuracy': without_acc,
+            'improvement': with_acc - without_acc,
+            'with_bridge_correct': with_bridge_correct,
+            'without_bridge_correct': without_bridge_correct,
+            'total': total
+        }
+
+
+def extract_numeric_answer(text: str) -> Optional[float]:
+    """
+    Extract numeric answer from model output.
+    
+    Handles formats like:
+    - "The answer is 42"
+    - "#### 42"
+    - "42"
+    - "42.5"
+    """
+    import re
+    
+    # Try #### format first (GSM8K style)
+    match = re.search(r'####\s*(-?[\d,]+\.?\d*)', text)
+    if match:
+        try:
+            return float(match.group(1).replace(',', ''))
+        except:
+            pass
+    
+    # Try "answer is X" format
+    match = re.search(r'answer\s+(?:is|=)\s*(-?[\d,]+\.?\d*)', text, re.IGNORECASE)
+    if match:
+        try:
+            return float(match.group(1).replace(',', ''))
+        except:
+            pass
+    
+    # Try to find last number in text
+    numbers = re.findall(r'-?[\d,]+\.?\d*', text)
+    if numbers:
+        try:
+            return float(numbers[-1].replace(',', ''))
+        except:
+            pass
+    
+    return None
 
 
 def simple_prompt_iterator(prompts: list) -> Iterator[str]:

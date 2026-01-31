@@ -1,6 +1,11 @@
 """
 Tests for the He-LMAS Bridge component.
 
+Updated for V2 architecture with:
+- Layer blending modes (skip, blend, attention)
+- Deep projectors with configurable depth
+- Full RoPE de-rotation/re-rotation
+
 Run with: pytest tests/test_bridge.py -v
 """
 
@@ -12,166 +17,238 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.bridge import HeLMAS_Bridge, create_bridge_from_config
+from src.bridge import (
+    HeLMAS_Bridge, 
+    create_bridge_from_config,
+    ShallowProjector,
+    DeepProjector,
+    LayerBlender,
+    AttentionLayerPooler
+)
+
+
+class TestProjectors:
+    """Test the projector classes."""
+    
+    def test_shallow_projector_identity(self):
+        """Test ShallowProjector with identity initialization."""
+        proj = ShallowProjector(128, 128, init_strategy="identity")
+        x = torch.randn(1, 8, 100, 128)
+        y = proj(x)
+        
+        assert y.shape == x.shape
+        torch.testing.assert_close(y, x, rtol=1e-5, atol=1e-5)
+    
+    def test_shallow_projector_dimension_change(self):
+        """Test ShallowProjector with dimension projection."""
+        proj = ShallowProjector(128, 96, init_strategy="random")
+        x = torch.randn(1, 8, 100, 128)
+        y = proj(x)
+        
+        assert y.shape == (1, 8, 100, 96)
+    
+    def test_deep_projector_shape(self):
+        """Test DeepProjector output shape."""
+        proj = DeepProjector(128, 128, hidden_dim=256, depth=2)
+        x = torch.randn(1, 8, 100, 128)
+        y = proj(x)
+        
+        assert y.shape == x.shape
+    
+    def test_deep_projector_params(self):
+        """Test DeepProjector has more parameters than shallow."""
+        shallow = ShallowProjector(128, 128)
+        deep = DeepProjector(128, 128, hidden_dim=256, depth=2)
+        
+        shallow_params = sum(p.numel() for p in shallow.parameters())
+        deep_params = sum(p.numel() for p in deep.parameters())
+        
+        # Deep should have more params
+        assert deep_params > shallow_params
+
+
+class TestLayerBlending:
+    """Test the layer blending classes."""
+    
+    @pytest.fixture
+    def sample_teacher_cache(self):
+        """Create a sample teacher KV cache (36 layers)."""
+        batch, heads, seq_len, head_dim = 1, 8, 100, 128
+        cache = []
+        for _ in range(36):
+            k = torch.randn(batch, heads, seq_len, head_dim)
+            v = torch.randn(batch, heads, seq_len, head_dim)
+            cache.append((k, v))
+        return cache
+    
+    def test_layer_blender_output_shape(self, sample_teacher_cache):
+        """Test LayerBlender (Conv1d) produces correct output."""
+        blender = LayerBlender(teacher_layers=36, student_layers=28)
+        result = blender(sample_teacher_cache)
+        
+        assert len(result) == 28
+        for k, v in result:
+            assert k.shape == (1, 8, 100, 128)
+            assert v.shape == (1, 8, 100, 128)
+    
+    def test_attention_pooler_output_shape(self, sample_teacher_cache):
+        """Test AttentionLayerPooler produces correct output."""
+        pooler = AttentionLayerPooler(teacher_layers=36, student_layers=28)
+        result = pooler(sample_teacher_cache)
+        
+        assert len(result) == 28
+        for k, v in result:
+            assert k.shape == (1, 8, 100, 128)
+            assert v.shape == (1, 8, 100, 128)
+    
+    def test_attention_weights_sum_to_one(self):
+        """Test attention weights are properly normalized."""
+        pooler = AttentionLayerPooler(teacher_layers=36, student_layers=28)
+        attn_k, attn_v = pooler.get_attention_weights()
+        
+        # Each row should sum to 1 (softmax)
+        torch.testing.assert_close(
+            attn_k.sum(dim=-1), 
+            torch.ones(28), 
+            rtol=1e-5, atol=1e-5
+        )
 
 
 class TestHeLMAS_Bridge:
-    """Test the HeLMAS_Bridge class."""
-    
-    @pytest.fixture
-    def default_bridge(self):
-        """Create a default bridge for Qwen3-8B → Qwen3-1.7B."""
-        return HeLMAS_Bridge(
-            teacher_layers=36,
-            student_layers=28,
-            teacher_head_dim=128,
-            student_head_dim=128,
-            num_kv_heads=8,
-            rope_handling="naive",
-            per_layer=True,
-            init_strategy="identity"
-        )
+    """Test the main HeLMAS_Bridge class."""
     
     @pytest.fixture
     def sample_teacher_cache(self):
         """Create a sample teacher KV cache."""
-        batch = 1
-        heads = 8
-        seq_len = 100
-        head_dim = 128
-        layers = 36
-        
+        batch, heads, seq_len, head_dim = 1, 8, 100, 128
         cache = []
-        for _ in range(layers):
+        for _ in range(36):
             k = torch.randn(batch, heads, seq_len, head_dim)
             v = torch.randn(batch, heads, seq_len, head_dim)
             cache.append((k, v))
-        
         return cache
     
-    def test_bridge_initialization(self, default_bridge):
-        """Test that bridge initializes correctly."""
-        assert default_bridge.teacher_layers == 36
-        assert default_bridge.student_layers == 28
-        assert len(default_bridge.layer_map) == 28
+    def test_bridge_skip_mode(self, sample_teacher_cache):
+        """Test bridge with skip (uniform stride) layer mapping."""
+        bridge = HeLMAS_Bridge(
+            teacher_layers=36,
+            student_layers=28,
+            layer_blending="skip",
+            projector_depth=1
+        )
         
-        # Check layer mapping is within bounds
-        assert all(0 <= idx < 36 for idx in default_bridge.layer_map)
-    
-    def test_bridge_output_shape(self, default_bridge, sample_teacher_cache):
-        """Test that bridge produces correct output shapes."""
-        student_cache = default_bridge(sample_teacher_cache)
+        result = bridge(sample_teacher_cache)
         
-        # Should produce 28 layers
-        assert len(student_cache) == 28
-        
-        # Each layer should have correct shape
-        for k, v in student_cache:
-            assert k.shape == (1, 8, 100, 128)  # [batch, heads, seq, head_dim]
+        assert len(result) == 28
+        for k, v in result:
+            assert k.shape == (1, 8, 100, 128)
             assert v.shape == (1, 8, 100, 128)
     
-    def test_layer_mapping_coverage(self, default_bridge):
-        """Test that layer mapping covers the teacher layers reasonably."""
-        info = default_bridge.get_layer_mapping_info()
-        
-        # Should use at least some layers from beginning and end
-        used = info["used_teacher_layers"]
-        assert 0 in used or 1 in used  # Early layers used
-        assert 34 in used or 35 in used  # Late layers used
-        
-        # Ratio should be roughly 1.28
-        assert 1.2 < info["ratio"] < 1.4
-    
-    def test_identity_initialization(self, default_bridge, sample_teacher_cache):
-        """Test that identity initialization preserves signal."""
-        # For identity init with matching dimensions, output should be close to input
-        student_cache = default_bridge(sample_teacher_cache)
-        
-        # Check first layer (should map to teacher layer 0)
-        k_in = sample_teacher_cache[0][0]
-        k_out = student_cache[0][0]
-        
-        # With identity init, these should be identical
-        torch.testing.assert_close(k_out, k_in, rtol=1e-5, atol=1e-5)
-    
-    def test_parameter_count(self, default_bridge):
-        """Test parameter counting."""
-        num_params = default_bridge.num_parameters()
-        
-        # For per-layer projectors: 28 layers * 2 (K+V) * (128*128) weights
-        expected = 28 * 2 * 128 * 128
-        assert num_params == expected
-    
-    def test_shared_projector_mode(self, sample_teacher_cache):
-        """Test bridge with shared projectors."""
+    def test_bridge_blend_mode(self, sample_teacher_cache):
+        """Test bridge with Conv1d blending."""
         bridge = HeLMAS_Bridge(
             teacher_layers=36,
             student_layers=28,
-            per_layer=False  # Shared projector
+            layer_blending="blend",
+            projector_depth=2
         )
         
-        student_cache = bridge(sample_teacher_cache)
+        result = bridge(sample_teacher_cache)
         
-        # Should still produce correct output
-        assert len(student_cache) == 28
+        assert len(result) == 28
+        for k, v in result:
+            assert k.shape == (1, 8, 100, 128)
+    
+    def test_bridge_attention_mode(self, sample_teacher_cache):
+        """Test bridge with attention pooling (default)."""
+        bridge = HeLMAS_Bridge(
+            teacher_layers=36,
+            student_layers=28,
+            layer_blending="attention",
+            projector_depth=2
+        )
         
-        # Parameter count should be much smaller
+        result = bridge(sample_teacher_cache)
+        
+        assert len(result) == 28
+        for k, v in result:
+            assert k.shape == (1, 8, 100, 128)
+    
+    def test_bridge_full_rope(self, sample_teacher_cache):
+        """Test bridge with full RoPE handling."""
+        bridge = HeLMAS_Bridge(
+            teacher_layers=36,
+            student_layers=28,
+            rope_handling="full",
+            teacher_rope_base=1000000.0,
+            student_rope_base=1000000.0
+        )
+        
+        result = bridge(sample_teacher_cache)
+        
+        assert len(result) == 28
+    
+    def test_parameter_count_shallow(self):
+        """Test parameter count for shallow projectors."""
+        bridge = HeLMAS_Bridge(
+            teacher_layers=36,
+            student_layers=28,
+            layer_blending="skip",
+            projector_depth=1,
+            per_layer=True
+        )
+        
         num_params = bridge.num_parameters()
-        expected = 2 * 128 * 128  # Just 2 projectors (K and V)
-        assert num_params == expected
+        
+        # 28 layers * 2 (K+V) * (128*128) = 917504
+        expected_projector_params = 28 * 2 * 128 * 128
+        assert num_params >= expected_projector_params
     
-    def test_dimension_projection(self, sample_teacher_cache):
-        """Test bridge with different head dimensions."""
-        bridge = HeLMAS_Bridge(
-            teacher_layers=36,
-            student_layers=28,
-            teacher_head_dim=128,
-            student_head_dim=96,  # Different dimension
-            init_strategy="random"
+    def test_parameter_count_deep(self):
+        """Test deep projectors have more params than shallow."""
+        shallow = HeLMAS_Bridge(
+            layer_blending="skip",
+            projector_depth=1
+        )
+        deep = HeLMAS_Bridge(
+            layer_blending="skip",
+            projector_depth=2
         )
         
-        student_cache = bridge(sample_teacher_cache)
-        
-        for k, v in student_cache:
-            assert k.shape[-1] == 96  # Projected dimension
-            assert v.shape[-1] == 96
-
-
-class TestLayerMapping:
-    """Test layer mapping strategies."""
-    
-    def test_uniform_stride(self):
-        """Test that uniform stride mapping is correct."""
-        bridge = HeLMAS_Bridge(teacher_layers=36, student_layers=28)
-        
-        # First and last should be mapped
-        mapping = bridge.layer_map.tolist()
-        assert mapping[0] == 0  # First student layer → first teacher layer
-        assert mapping[-1] == 35  # Last student layer → last teacher layer
-    
-    def test_extreme_compression(self):
-        """Test with extreme layer ratio (like Llama 70B → 8B)."""
-        bridge = HeLMAS_Bridge(
-            teacher_layers=80,
-            student_layers=32,
-            teacher_head_dim=128,
-            student_head_dim=128
-        )
-        
-        info = bridge.get_layer_mapping_info()
-        
-        # Ratio should be 2.5
-        assert abs(info["ratio"] - 2.5) < 0.01
-        
-        # Should skip about 48 layers
-        assert info["num_skipped"] == 48
+        assert deep.num_parameters() > shallow.num_parameters()
 
 
 class TestConfigFactory:
     """Test bridge creation from config."""
     
-    def test_create_from_config(self, tmp_path):
-        """Test creating bridge from config dictionary."""
+    def test_create_from_config_defaults(self):
+        """Test creating bridge with default values."""
+        config = {
+            'models': {
+                'teacher': {
+                    'layers': 36,
+                    'head_dim': 128,
+                    'num_kv_heads': 8
+                },
+                'student': {
+                    'layers': 28,
+                    'head_dim': 128,
+                    'num_kv_heads': 8
+                }
+            },
+            'bridge': {}
+        }
+        
+        bridge = create_bridge_from_config(config)
+        
+        assert bridge.teacher_layers == 36
+        assert bridge.student_layers == 28
+        # Default is now 'attention' and 'full' rope
+        assert bridge.layer_blending == "attention"
+        assert bridge.rope_handling == "full"
+    
+    def test_create_from_config_custom(self):
+        """Test creating bridge with custom values."""
         config = {
             'models': {
                 'teacher': {
@@ -186,16 +263,16 @@ class TestConfigFactory:
                 }
             },
             'bridge': {
-                'rope_handling': 'naive',
-                'per_layer_projectors': True,
-                'init_strategy': 'identity'
+                'layer_blending': 'blend',
+                'projector_depth': 3,
+                'rope_handling': 'naive'
             }
         }
         
         bridge = create_bridge_from_config(config)
         
-        assert bridge.teacher_layers == 36
-        assert bridge.student_layers == 28
+        assert bridge.layer_blending == "blend"
+        assert bridge.projector_depth == 3
         assert bridge.rope_handling == "naive"
 
 
