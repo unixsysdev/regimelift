@@ -58,7 +58,12 @@ thinking:
   start_token: "<think>"
   # Token sequence that ends thinking
   end_token: "</think>"
-  # Handoff prompt appended after injection
+  # Handoff mode: "none" | "prompt" | "full_context"
+  #   - none: Just the projected cache, empty input
+  #   - prompt: A short handoff prompt (e.g., "\nAnswer:")
+  #   - full_context: Re-feed original question + cache
+  handoff_mode: "prompt"
+  # Handoff prompt (only used if handoff_mode="prompt")
   handoff_prompt: "\nAnswer:"
 
 # Paths

@@ -69,6 +69,13 @@ training:
 thinking_mode:
   start_token: "<think>"
   end_token: "</think>"
+  
+  # Handoff configuration: what to feed Student after injecting cache
+  # mode: "none" | "prompt" | "full_context"
+  #   - none: Just the projected cache, no input tokens
+  #   - prompt: A short handoff prompt (e.g., "\nAnswer:")
+  #   - full_context: Re-feed the original question + cache
+  handoff_mode: "prompt"
   handoff_prompt: "\nAnswer:"
 
 paths:

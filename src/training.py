@@ -45,6 +45,13 @@ class TrainingConfig:
     # Which layers to compute attention consistency on
     consistency_layers: str = "all"  # "all", "last", or "sample"
     
+    # Handoff mode: what to feed Student after injecting projected cache
+    #   - "none": Empty input (relies purely on cache)
+    #   - "prompt": Short handoff prompt (default: "\nAnswer:")
+    #   - "full_context": Re-feed original question
+    handoff_mode: str = "prompt"
+    handoff_prompt: str = "\nAnswer:"
+    
     # H200 Optimization: Automatic Mixed Precision
     use_amp: bool = False
     amp_dtype: str = "bfloat16"  # "float16" or "bfloat16" (H200 prefers BF16)
@@ -328,14 +335,33 @@ class HeLMAS_Trainer:
             projected_cache = self.bridge(sliced_cache)
         projected_cache_tuple = tuple(projected_cache)
         
-        # === STEP 3: Prepare query tokens ===
-        # We use the same query for both forward passes
-        handoff_text = "\nAnswer:"
-        query_ids = self.model_pair.tokenizer.encode(
-            handoff_text,
-            add_special_tokens=False,
-            return_tensors="pt"
-        ).to(self.device)
+        # === STEP 3: Prepare query tokens based on handoff mode ===
+        # Handoff modes:
+        #   - "none": Empty input, rely purely on the injected cache
+        #   - "prompt": Short handoff prompt (e.g., "\nAnswer:")
+        #   - "full_context": Re-feed the original question
+        
+        if self.config.handoff_mode == "none":
+            # Empty token - just a single padding token to trigger generation
+            query_ids = torch.tensor(
+                [[self.model_pair.tokenizer.eos_token_id]], 
+                dtype=torch.long
+            ).to(self.device)
+        elif self.config.handoff_mode == "full_context":
+            # Re-feed the original question (extract from prompt)
+            # Note: prompt already has thinking wrapper, we want just the question
+            query_ids = self.model_pair.tokenizer.encode(
+                prompt,  # Full original prompt
+                return_tensors="pt"
+            ).to(self.device)
+        else:  # "prompt" mode (default)
+            query_ids = self.model_pair.tokenizer.encode(
+                self.config.handoff_prompt,
+                add_special_tokens=False,
+                return_tensors="pt"
+            ).to(self.device)
+        
+        metrics['handoff_mode'] = self.config.handoff_mode
         
         # === STEP 4: Forward pass with PROJECTED cache (AMP enabled) ===
         layer_indices = self._get_layer_indices()
