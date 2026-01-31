@@ -1,19 +1,20 @@
 """
 Training Infrastructure for He-LMAS
 
-Implements the "Online Streaming" training loop where KV caches are
-generated on-the-fly from the Teacher, projected through the Bridge,
-and used to train the Bridge via next-token prediction on the Student.
+Implements the "Attention Consistency Loss" from RFC Section 3.2:
+  L = ||Attn_Student(Q, Φ(KV_Teacher)) - Attn_Student(Q, KV_Student^TeacherForced)||²
 
-Key insight: We don't save terabytes of KV caches to disk. We generate
-them live, use them once, and discard them.
+Key insight: Instead of forcing caches to match (geometrically impossible),
+we force the Attention OUTPUT to match. The Student should see the same
+"Context Vector" when looking at the Projected Teacher memory as it would
+if it had correctly computed the memory itself.
 """
 
 import torch
 import torch.nn as nn
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from typing import Optional, Dict, Any, Iterator, Tuple
+from typing import Optional, Dict, Any, Iterator, Tuple, List
 from dataclasses import dataclass
 from pathlib import Path
 import time
@@ -37,6 +38,13 @@ class TrainingConfig:
     gradient_accumulation: int = 4
     warmup_steps: int = 100
     
+    # Loss weights (RFC: Attention Consistency + optional auxiliary CE)
+    attention_consistency_weight: float = 1.0
+    auxiliary_ce_weight: float = 0.1  # Small weight for next-token prediction
+    
+    # Which layers to compute attention consistency on
+    consistency_layers: str = "all"  # "all", "last", or "sample"
+    
     @classmethod
     def from_dict(cls, d: dict) -> "TrainingConfig":
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
@@ -52,15 +60,116 @@ class TrainingState:
     samples_seen: int = 0
 
 
+class AttentionConsistencyLoss(nn.Module):
+    """
+    RFC Section 3.2: Attention Consistency Loss
+    
+    L = ||Attn(Q, Φ(KV_Big)) - Attn(Q, KV_Small^TeacherForced)||²
+    
+    Instead of forcing the caches to match (which is geometrically impossible),
+    we force the Attention Output to match.
+    
+    Intuition: "The Student should see the same 'Context Vector' when looking
+    at the Projected memory as it would if it had correctly computed the memory itself."
+    """
+    
+    def __init__(self, normalize: bool = True):
+        super().__init__()
+        self.normalize = normalize
+    
+    def forward(
+        self,
+        attn_output_projected: torch.Tensor,
+        attn_output_native: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Compute attention consistency loss.
+        
+        Args:
+            attn_output_projected: Attention output using projected KV cache
+                                   Shape: [batch, seq, hidden] or [batch, heads, seq, head_dim]
+            attn_output_native: Attention output using Student's native KV cache
+                                Shape: same as above
+        
+        Returns:
+            L2 loss between the attention outputs
+        """
+        if self.normalize:
+            # Normalize to unit vectors for stable gradients
+            attn_output_projected = nn.functional.normalize(attn_output_projected, dim=-1)
+            attn_output_native = nn.functional.normalize(attn_output_native, dim=-1)
+        
+        # L2 loss (MSE)
+        loss = nn.functional.mse_loss(attn_output_projected, attn_output_native)
+        
+        return loss
+
+
+class AttentionHook:
+    """
+    Hook to capture attention outputs from transformer layers.
+    
+    We attach this to the Student model to extract the attention output
+    (the "context vector") for computing the consistency loss.
+    """
+    
+    def __init__(self):
+        self.outputs = []
+        self.handles = []
+    
+    def hook_fn(self, module, input, output):
+        """Capture the output of an attention layer."""
+        # Handle different output formats
+        if isinstance(output, tuple):
+            # Usually (attn_output, attn_weights, ...)
+            attn_output = output[0]
+        else:
+            attn_output = output
+        
+        self.outputs.append(attn_output.detach().clone())
+    
+    def attach(self, model, layer_indices: Optional[List[int]] = None):
+        """
+        Attach hooks to attention layers.
+        
+        Args:
+            model: The transformer model
+            layer_indices: Which layers to hook (None = all)
+        """
+        self.clear()
+        
+        # Find attention layers (Qwen uses 'self_attn')
+        for i, layer in enumerate(model.model.layers):
+            if layer_indices is not None and i not in layer_indices:
+                continue
+            
+            if hasattr(layer, 'self_attn'):
+                handle = layer.self_attn.register_forward_hook(self.hook_fn)
+                self.handles.append(handle)
+    
+    def clear(self):
+        """Clear captured outputs and remove hooks."""
+        self.outputs = []
+        for handle in self.handles:
+            handle.remove()
+        self.handles = []
+    
+    def get_outputs(self) -> List[torch.Tensor]:
+        """Get captured attention outputs."""
+        return self.outputs
+
+
 class HeLMAS_Trainer:
     """
-    Trainer for the He-LMAS Bridge.
+    Trainer for the He-LMAS Bridge using Attention Consistency Loss.
     
-    The training loop:
-    1. Teacher generates reasoning trace (with <think> tags)
+    RFC Section 3.2 Training Strategy:
+    1. Teacher generates reasoning trace → extract KV cache
     2. Bridge projects Teacher's KV cache to Student geometry
-    3. Student tries to predict continuation using injected cache
-    4. Loss backpropagates through Bridge only (models are frozen)
+    3. Run Student with PROJECTED cache → capture attention outputs
+    4. Run Student with NATIVE cache (teacher-forced) → capture attention outputs
+    5. Loss = ||Attn_projected - Attn_native||²
+    6. Backpropagate through Bridge only
     
     Usage:
         trainer = HeLMAS_Trainer.from_config("configs/default.yaml")
@@ -103,36 +212,27 @@ class HeLMAS_Trainer:
             eta_min=config.learning_rate * 0.1
         )
         
-        # Loss function
-        self.criterion = nn.CrossEntropyLoss()
+        # Loss functions (RFC: Attention Consistency is primary)
+        self.attn_consistency_loss = AttentionConsistencyLoss(normalize=True)
+        self.ce_loss = nn.CrossEntropyLoss()  # Auxiliary
+        
+        # Attention hooks for capturing outputs
+        self.attn_hook = AttentionHook()
         
         # Training state
         self.state = TrainingState()
         
         # Logging
-        self.writer = None  # TensorBoard writer (lazy init)
+        self.writer = None
     
     @classmethod
     def from_config(cls, config_path: str) -> "HeLMAS_Trainer":
-        """
-        Create trainer from configuration file.
-        
-        Args:
-            config_path: Path to YAML config
-            
-        Returns:
-            Initialized trainer
-        """
+        """Create trainer from configuration file."""
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
         
-        # Load models
         model_pair = HeLMAS_ModelPair.from_config(config_path)
-        
-        # Create bridge
         bridge = create_bridge_from_config(config)
-        
-        # Training config
         train_config = TrainingConfig.from_dict(config.get('training', {}))
         
         return cls(
@@ -143,29 +243,44 @@ class HeLMAS_Trainer:
             log_dir=config.get('paths', {}).get('logs', 'logs')
         )
     
-    def train_step(self, prompt: str, target_continuation: Optional[str] = None) -> Dict[str, float]:
-        """
-        Single training step.
+    def _get_layer_indices(self) -> Optional[List[int]]:
+        """Determine which layers to compute consistency on."""
+        n_layers = self.model_pair.student_config.get('num_hidden_layers', 28)
         
-        Args:
-            prompt: Input prompt for Teacher
-            target_continuation: Optional target (if None, use Teacher's output)
-            
-        Returns:
-            Dictionary of metrics
+        if self.config.consistency_layers == "all":
+            return None  # Hook all layers
+        elif self.config.consistency_layers == "last":
+            return [n_layers - 1]  # Only last layer
+        elif self.config.consistency_layers == "sample":
+            # Sample every 4th layer
+            return list(range(0, n_layers, 4))
+        else:
+            return None
+    
+    def train_step(self, prompt: str) -> Dict[str, float]:
+        """
+        Single training step implementing RFC Section 3.2.
+        
+        The Attention Consistency approach:
+        1. Get Teacher's KV cache for the prompt
+        2. Project it through Bridge → projected_cache
+        3. Run Student with projected_cache → capture attn outputs
+        4. Run Student with its own cache (native) → capture attn outputs
+        5. L = ||attn_projected - attn_native||²
         """
         metrics = {}
         
-        # 1. Teacher: Generate reasoning trace
+        # === STEP 1: Teacher generates reasoning and we get KV cache ===
         with torch.no_grad():
             teacher_ids, teacher_cache = self.model_pair.teacher_generate(
                 prompt,
                 max_new_tokens=self.config.max_thinking_tokens
             )
         
-        # 2. Slice cache at </think> if present
-        teacher_cache = extract_kv_cache(type('Output', (), {'past_key_values': teacher_cache})())
-        
+        # Extract and slice cache at </think>
+        teacher_cache = extract_kv_cache(
+            type('Output', (), {'past_key_values': teacher_cache})()
+        )
         sliced_cache, cut_pos = slice_cache_at_token(
             teacher_cache,
             teacher_ids,
@@ -175,54 +290,104 @@ class HeLMAS_Trainer:
         )
         
         metrics['teacher_thinking_tokens'] = cut_pos
-        metrics['teacher_cache_mb'] = kv_cache_info(sliced_cache)['memory_mb']
         
-        # 3. Bridge: Project cache
+        # === STEP 2: Bridge projects Teacher's cache ===
         projected_cache = self.bridge(sliced_cache)
-        
-        # Convert to tuple format expected by HuggingFace
         projected_cache_tuple = tuple(projected_cache)
         
-        # 4. Prepare handoff tokens
+        # === STEP 3: Prepare query tokens ===
+        # We use the same query for both forward passes
         handoff_text = "\nAnswer:"
-        handoff_ids = self.model_pair.tokenizer.encode(
-            handoff_text, 
+        query_ids = self.model_pair.tokenizer.encode(
+            handoff_text,
             add_special_tokens=False,
             return_tensors="pt"
         ).to(self.device)
         
-        # 5. Get target: Either provided or from Teacher's continuation
-        if target_continuation is not None:
-            target_ids = self.model_pair.tokenizer.encode(
-                target_continuation,
-                add_special_tokens=False,
-                return_tensors="pt"
-            ).to(self.device)
-        else:
-            # Use tokens after the thinking section
-            target_ids = teacher_ids[:, cut_pos:cut_pos + 20].to(self.device)
+        # === STEP 4: Forward pass with PROJECTED cache ===
+        layer_indices = self._get_layer_indices()
+        self.attn_hook.attach(self.model_pair.student, layer_indices)
         
-        # 6. Student forward with injected cache
-        outputs = self.model_pair.student_forward(
-            input_ids=handoff_ids,
-            past_key_values=projected_cache_tuple
+        outputs_projected = self.model_pair.student(
+            input_ids=query_ids,
+            past_key_values=projected_cache_tuple,
+            use_cache=True,
+            output_attentions=False  # We use hooks instead
         )
         
-        # 7. Calculate loss
-        # We compare Student's prediction to the target continuation
-        logits = outputs.logits[:, -1, :]  # Last token prediction
+        attn_outputs_projected = self.attn_hook.get_outputs()
+        self.attn_hook.clear()
         
-        if target_ids.shape[1] > 0:
-            target_token = target_ids[:, 0]  # Predict first target token
-            loss = self.criterion(logits, target_token)
+        # === STEP 5: Forward pass with NATIVE Student cache (teacher-forced) ===
+        # First, compute Student's native cache for the same context
+        # We feed the original prompt tokens to Student
+        prompt_ids = self.model_pair.tokenizer.encode(
+            prompt,
+            return_tensors="pt"
+        ).to(self.device)
+        
+        with torch.no_grad():
+            # Get Student's own understanding of the prompt
+            student_prefill = self.model_pair.student(
+                input_ids=prompt_ids,
+                use_cache=True
+            )
+            native_cache = student_prefill.past_key_values
+        
+        # Now run with native cache and capture attention
+        self.attn_hook.attach(self.model_pair.student, layer_indices)
+        
+        with torch.no_grad():
+            outputs_native = self.model_pair.student(
+                input_ids=query_ids,
+                past_key_values=native_cache,
+                use_cache=True
+            )
+        
+        attn_outputs_native = self.attn_hook.get_outputs()
+        self.attn_hook.clear()
+        
+        # === STEP 6: Compute Attention Consistency Loss ===
+        total_attn_loss = 0.0
+        num_layers = len(attn_outputs_projected)
+        
+        for proj_attn, native_attn in zip(attn_outputs_projected, attn_outputs_native):
+            # Ensure same shape (truncate to min length if needed)
+            min_len = min(proj_attn.shape[-2], native_attn.shape[-2])
+            proj_attn = proj_attn[..., :min_len, :]
+            native_attn = native_attn[..., :min_len, :]
+            
+            layer_loss = self.attn_consistency_loss(proj_attn, native_attn)
+            total_attn_loss += layer_loss
+        
+        attn_loss = total_attn_loss / max(num_layers, 1)
+        metrics['attn_consistency_loss'] = attn_loss.item()
+        
+        # === STEP 7: Optional auxiliary CE loss ===
+        if self.config.auxiliary_ce_weight > 0:
+            # Predict next token after Teacher's thinking
+            target_ids = teacher_ids[:, cut_pos:cut_pos + 1].to(self.device)
+            
+            if target_ids.shape[1] > 0:
+                logits = outputs_projected.logits[:, -1, :]
+                ce_loss = self.ce_loss(logits, target_ids[:, 0])
+                metrics['ce_loss'] = ce_loss.item()
+            else:
+                ce_loss = torch.tensor(0.0, device=self.device)
+                metrics['ce_loss'] = 0.0
         else:
-            loss = torch.tensor(0.0, device=self.device)
+            ce_loss = torch.tensor(0.0, device=self.device)
         
-        metrics['loss'] = loss.item()
+        # === STEP 8: Combined loss ===
+        total_loss = (
+            self.config.attention_consistency_weight * attn_loss +
+            self.config.auxiliary_ce_weight * ce_loss
+        )
+        metrics['total_loss'] = total_loss.item()
         
-        # 8. Backward and optimize
-        loss = loss / self.config.gradient_accumulation
-        loss.backward()
+        # === STEP 9: Backward and optimize ===
+        total_loss = total_loss / self.config.gradient_accumulation
+        total_loss.backward()
         
         if (self.state.step + 1) % self.config.gradient_accumulation == 0:
             torch.nn.utils.clip_grad_norm_(self.bridge.parameters(), max_norm=1.0)
@@ -231,8 +396,10 @@ class HeLMAS_Trainer:
             self.optimizer.zero_grad()
             metrics['lr'] = self.scheduler.get_last_lr()[0]
         
-        # 9. Cleanup VRAM
-        del teacher_cache, sliced_cache, projected_cache, outputs
+        # === Cleanup VRAM ===
+        del teacher_cache, sliced_cache, projected_cache
+        del attn_outputs_projected, attn_outputs_native
+        del native_cache, outputs_projected, outputs_native
         torch.cuda.empty_cache()
         
         return metrics
@@ -242,23 +409,20 @@ class HeLMAS_Trainer:
         data_iterator: Iterator[str],
         max_steps: Optional[int] = None
     ):
-        """
-        Main training loop.
-        
-        Args:
-            data_iterator: Iterator yielding prompts
-            max_steps: Override max_steps from config
-        """
+        """Main training loop."""
         max_steps = max_steps or self.config.max_steps
         
         self.bridge.train()
         self.optimizer.zero_grad()
         
-        running_loss = 0.0
+        running_attn_loss = 0.0
+        running_ce_loss = 0.0
         step_times = []
         
         print(f"Starting training for {max_steps} steps...")
         print(f"Bridge parameters: {self.bridge.num_parameters():,}")
+        print(f"Loss: Attention Consistency (w={self.config.attention_consistency_weight}) + "
+              f"CE (w={self.config.auxiliary_ce_weight})")
         
         for prompt in data_iterator:
             if self.state.step >= max_steps:
@@ -269,7 +433,8 @@ class HeLMAS_Trainer:
             try:
                 metrics = self.train_step(prompt)
                 
-                running_loss += metrics['loss']
+                running_attn_loss += metrics.get('attn_consistency_loss', 0)
+                running_ce_loss += metrics.get('ce_loss', 0)
                 self.state.step += 1
                 self.state.samples_seen += 1
                 
@@ -278,17 +443,20 @@ class HeLMAS_Trainer:
                 
                 # Logging
                 if self.state.step % self.config.log_every == 0:
-                    avg_loss = running_loss / self.config.log_every
+                    avg_attn = running_attn_loss / self.config.log_every
+                    avg_ce = running_ce_loss / self.config.log_every
                     avg_time = sum(step_times[-self.config.log_every:]) / len(step_times[-self.config.log_every:])
                     
                     print(
                         f"Step {self.state.step}/{max_steps} | "
-                        f"Loss: {avg_loss:.4f} | "
+                        f"AttnLoss: {avg_attn:.4f} | "
+                        f"CELoss: {avg_ce:.4f} | "
                         f"Time: {avg_time:.2f}s | "
                         f"LR: {metrics.get('lr', self.config.learning_rate):.2e}"
                     )
                     
-                    running_loss = 0.0
+                    running_attn_loss = 0.0
+                    running_ce_loss = 0.0
                 
                 # Checkpointing
                 if self.state.step % self.config.checkpoint_every == 0:
@@ -296,9 +464,10 @@ class HeLMAS_Trainer:
                     
             except Exception as e:
                 print(f"Error at step {self.state.step}: {e}")
+                import traceback
+                traceback.print_exc()
                 continue
         
-        # Final checkpoint
         self.save_checkpoint(final=True)
         print(f"Training complete. Final step: {self.state.step}")
     
@@ -336,15 +505,7 @@ def simple_prompt_iterator(prompts: list) -> Iterator[str]:
 
 
 def create_thinking_prompt(question: str) -> str:
-    """
-    Wrap a question in Qwen3's thinking format.
-    
-    Args:
-        question: The question to think about
-        
-    Returns:
-        Formatted prompt that triggers <think> mode
-    """
+    """Wrap a question in Qwen3's thinking format."""
     return f"""<|im_start|>user
 {question}<|im_end|>
 <|im_start|>assistant
