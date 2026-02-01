@@ -297,6 +297,42 @@ def get_training_data(
     )
 
 
+def get_batched_training_data(
+    dataset: str = "gsm8k",
+    batch_size: int = 8,
+    max_samples: Optional[int] = None
+) -> Iterator[List[str]]:
+    """
+    Get training data as batches for true parallel processing.
+    
+    Args:
+        dataset: Dataset name
+        batch_size: Number of prompts per batch
+        max_samples: Limit samples (None = all)
+        
+    Returns:
+        Infinite iterator yielding lists of formatted prompts
+        
+    Example:
+        for batch in get_batched_training_data("gsm8k", batch_size=8):
+            # batch is ["prompt1", "prompt2", ..., "prompt8"]
+            tokenized = tokenizer(batch, padding=True, return_tensors="pt")
+    """
+    single_iterator = create_data_iterator(
+        dataset_name=dataset,
+        split="train",
+        max_samples=max_samples,
+        shuffle=True,
+        infinite=True
+    )
+    
+    while True:
+        batch = []
+        for _ in range(batch_size):
+            batch.append(next(single_iterator))
+        yield batch
+
+
 def get_validation_data(
     dataset: str = "gsm8k",
     max_samples: int = 50,

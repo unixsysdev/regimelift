@@ -142,11 +142,13 @@ def main():
         
         data_iterator = file_iterator()
         max_steps = args.max_steps
+        use_batched = False
     elif args.dataset == "sample":
         # Use built-in sample prompts
         print("\nUsing sample prompts (use --dataset for real training)")
         data_iterator = create_sample_iterator()
         max_steps = args.max_steps
+        use_batched = False
     else:
         # Use HuggingFace dataset
         print(f"\n📊 Loading dataset: {args.dataset}")
@@ -158,6 +160,7 @@ def main():
             max_samples=args.max_samples
         )
         max_steps = args.max_steps
+        use_batched = False  # Will be updated below based on batch_size
     
     # Load validation data (unless disabled)
     eval_data = None
@@ -175,6 +178,22 @@ def main():
     print(f"\n🔧 Loading models from config: {args.config}")
     trainer = HeLMAS_Trainer.from_config(args.config, eval_data=eval_data)
     
+    # Check if we should use batched training
+    batch_size = trainer.config.batch_size
+    if batch_size > 1 and args.dataset not in ["sample", None] and not args.dry_run and not args.prompts_file:
+        print(f"\n⚡ Using TRUE BATCHING with batch_size={batch_size}")
+        # Switch to batched data iterator
+        from src.data_loader import get_batched_training_data
+        data_iterator = get_batched_training_data(
+            dataset=args.dataset,
+            batch_size=batch_size,
+            max_samples=args.max_samples
+        )
+        use_batched = True
+    else:
+        print(f"\n📝 Using single-sample training (batch_size=1 or sample data)")
+        use_batched = False
+    
     # Resume from checkpoint if specified
     if args.checkpoint:
         trainer.load_checkpoint(args.checkpoint)
@@ -185,7 +204,10 @@ def main():
     print("=" * 60)
     
     try:
-        trainer.train(data_iterator, max_steps=max_steps)
+        if use_batched:
+            trainer.train_batched(data_iterator, max_steps=max_steps)
+        else:
+            trainer.train(data_iterator, max_steps=max_steps)
     except KeyboardInterrupt:
         print("\n\n⚠️  Training interrupted. Saving checkpoint...")
         trainer.save_checkpoint(final=True)

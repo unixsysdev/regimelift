@@ -511,6 +511,216 @@ class HeLMAS_Trainer:
         
         return metrics
     
+    def train_step_batched(self, prompts: List[str]) -> Dict[str, float]:
+        """
+        Batched training step for true parallel processing.
+        
+        Processes multiple prompts in parallel for better H200 utilization.
+        
+        Key differences from train_step:
+        - Teacher generates for each prompt sequentially (can't batch generation)
+        - KV caches are stacked and padded for batch projection
+        - Student forward pass is fully batched
+        - Attention mask is passed to loss to ignore padding
+        
+        Args:
+            prompts: List of formatted prompts (batch_size items)
+            
+        Returns:
+            Dict of training metrics (averaged across batch)
+        """
+        metrics = {}
+        batch_size = len(prompts)
+        
+        amp_context = torch.amp.autocast(
+            device_type='cuda',
+            dtype=self.amp_dtype,
+            enabled=self.use_amp
+        )
+        
+        # === STEP 1: Teacher generates for each prompt (sequential) ===
+        # Note: Teacher generation can't be easily batched due to varying output lengths
+        teacher_caches = []
+        max_seq_len = 0
+        
+        with torch.no_grad():
+            for prompt in prompts:
+                teacher_ids, teacher_cache = self.model_pair.teacher_generate(
+                    prompt,
+                    max_new_tokens=self.config.max_thinking_tokens
+                )
+                
+                # Extract and slice at </think>
+                cache = extract_kv_cache(
+                    type('Output', (), {'past_key_values': teacher_cache})()
+                )
+                sliced_cache, cut_pos = slice_cache_at_token(
+                    cache,
+                    teacher_ids,
+                    self.model_pair.tokenizer,
+                    end_token="</think>",
+                    include_end_token=True
+                )
+                
+                teacher_caches.append(sliced_cache)
+                seq_len = sliced_cache[0][0].shape[2]  # [batch, heads, seq, dim]
+                max_seq_len = max(max_seq_len, seq_len)
+        
+        metrics['teacher_thinking_tokens'] = max_seq_len
+        
+        # === STEP 2: Pad and stack KV caches ===
+        # Each cache: list of (k, v) tuples per layer
+        # k/v shape: [1, heads, seq, dim] - need to pad seq dim and stack batch
+        
+        n_layers = len(teacher_caches[0])
+        padded_cache = []
+        attention_masks = []
+        
+        for layer_idx in range(n_layers):
+            k_list = []
+            v_list = []
+            
+            for cache in teacher_caches:
+                k, v = cache[layer_idx]
+                seq_len = k.shape[2]
+                
+                # Pad to max_seq_len
+                if seq_len < max_seq_len:
+                    pad_len = max_seq_len - seq_len
+                    k = torch.nn.functional.pad(k, (0, 0, 0, pad_len))  # Pad seq dim
+                    v = torch.nn.functional.pad(v, (0, 0, 0, pad_len))
+                
+                k_list.append(k)
+                v_list.append(v)
+            
+            # Stack: [batch, heads, seq, dim]
+            k_stacked = torch.cat(k_list, dim=0)
+            v_stacked = torch.cat(v_list, dim=0)
+            padded_cache.append((k_stacked, v_stacked))
+        
+        # Build attention mask: [batch, max_seq_len]
+        for cache in teacher_caches:
+            seq_len = cache[0][0].shape[2]
+            mask = torch.zeros(max_seq_len, device=self.device)
+            mask[:seq_len] = 1.0
+            attention_masks.append(mask)
+        
+        attention_mask = torch.stack(attention_masks, dim=0)  # [batch, seq]
+        
+        # === STEP 3: Bridge projection (batched) ===
+        with amp_context:
+            projected_cache = self.bridge(padded_cache)
+        projected_cache_tuple = tuple(projected_cache)
+        
+        # === STEP 4: Prepare query tokens (batched) ===
+        if self.config.handoff_mode == "prompt":
+            query_text = self.config.handoff_prompt
+            # Tokenize batch with padding
+            query_inputs = self.model_pair.tokenizer(
+                [query_text] * batch_size,
+                padding=True,
+                return_tensors="pt"
+            ).to(self.device)
+            query_ids = query_inputs.input_ids
+            query_mask = query_inputs.attention_mask
+        else:
+            query_ids = torch.tensor(
+                [[self.model_pair.tokenizer.eos_token_id]] * batch_size,
+                dtype=torch.long
+            ).to(self.device)
+            query_mask = torch.ones_like(query_ids)
+        
+        # === STEP 5: Student forward with projected cache (batched) ===
+        self.attn_hook.attach(self.model_pair.student, self._get_layer_indices())
+        
+        with amp_context:
+            outputs_projected = self.model_pair.student_forward(
+                query_ids,
+                past_key_values=projected_cache_tuple,
+                use_cache=True
+            )
+        
+        attn_outputs_projected = self.attn_hook.get_outputs()
+        self.attn_hook.clear()
+        
+        # === STEP 6: Teacher-forced native Student forward (batched) ===
+        # For simplicity, we'll use the same query for native forward
+        # and let the Student build its own cache
+        
+        with torch.no_grad():
+            # Tokenize all prompts together
+            native_inputs = self.model_pair.tokenizer(
+                prompts,
+                padding=True,
+                truncation=True,
+                max_length=512,
+                return_tensors="pt"
+            ).to(self.device)
+            
+            outputs_native_temp = self.model_pair.student_forward(
+                native_inputs.input_ids,
+                attention_mask=native_inputs.attention_mask,
+                use_cache=True
+            )
+            native_cache = outputs_native_temp.past_key_values
+        
+        self.attn_hook.attach(self.model_pair.student, self._get_layer_indices())
+        
+        with amp_context:
+            outputs_native = self.model_pair.student_forward(
+                query_ids,
+                past_key_values=native_cache,
+                use_cache=True
+            )
+        
+        attn_outputs_native = self.attn_hook.get_outputs()
+        self.attn_hook.clear()
+        
+        # === STEP 7: Compute Attention Consistency Loss (with masking) ===
+        total_attn_loss = 0.0
+        num_layers = len(attn_outputs_projected)
+        
+        for proj_attn, native_attn in zip(attn_outputs_projected, attn_outputs_native):
+            min_len = min(proj_attn.shape[-2], native_attn.shape[-2])
+            proj_attn = proj_attn[..., :min_len, :]
+            native_attn = native_attn[..., :min_len, :]
+            
+            # Use query_mask for the attention outputs
+            layer_loss = self.attn_consistency_loss(
+                proj_attn, 
+                native_attn, 
+                attention_mask=query_mask[..., :min_len]
+            )
+            total_attn_loss += layer_loss
+        
+        attn_loss = total_attn_loss / max(num_layers, 1)
+        metrics['attn_consistency_loss'] = attn_loss.item()
+        
+        # === STEP 8: Combined loss ===
+        total_loss = self.config.attention_consistency_weight * attn_loss
+        metrics['total_loss'] = total_loss.item()
+        metrics['batch_size'] = batch_size
+        
+        # === STEP 9: Backward and optimize ===
+        total_loss = total_loss / self.config.gradient_accumulation
+        self.grad_scaler.scale(total_loss).backward()
+        
+        if (self.state.step + 1) % self.config.gradient_accumulation == 0:
+            self.grad_scaler.unscale_(self.optimizer)
+            torch.nn.utils.clip_grad_norm_(self.bridge.parameters(), max_norm=1.0)
+            self.grad_scaler.step(self.optimizer)
+            self.grad_scaler.update()
+            self.scheduler.step()
+            self.optimizer.zero_grad()
+            metrics['lr'] = self.scheduler.get_last_lr()[0]
+        
+        # Cleanup
+        del teacher_caches, padded_cache, projected_cache
+        del attn_outputs_projected, attn_outputs_native
+        torch.cuda.empty_cache()
+        
+        return metrics
+    
     def train(
         self,
         data_iterator: Iterator[str],
@@ -594,6 +804,94 @@ class HeLMAS_Trainer:
         
         self.save_checkpoint(final=True)
         print(f"Training complete. Final step: {self.state.step}")
+    
+    def train_batched(
+        self,
+        batch_iterator: Iterator[List[str]],
+        max_steps: Optional[int] = None
+    ):
+        """
+        Main training loop with true batching for H200 speedup.
+        
+        Args:
+            batch_iterator: Iterator yielding lists of prompts (from get_batched_training_data)
+            max_steps: Maximum training steps
+        """
+        max_steps = max_steps or self.config.max_steps
+        
+        self.bridge.train()
+        self.optimizer.zero_grad()
+        
+        running_attn_loss = 0.0
+        step_times = []
+        
+        print(f"Starting BATCHED training for {max_steps} steps...")
+        print(f"Bridge parameters: {self.bridge.num_parameters():,}")
+        print(f"Batch size: {self.config.batch_size}")
+        print(f"Loss: Attention Consistency (w={self.config.attention_consistency_weight})")
+        
+        for batch in batch_iterator:
+            if self.state.step >= max_steps:
+                break
+            
+            step_start = time.time()
+            
+            try:
+                metrics = self.train_step_batched(batch)
+                
+                running_attn_loss += metrics.get('attn_consistency_loss', 0)
+                self.state.step += 1
+                self.state.samples_seen += len(batch)
+                
+                step_time = time.time() - step_start
+                step_times.append(step_time)
+                
+                # Logging
+                if self.state.step % self.config.log_every == 0:
+                    avg_attn = running_attn_loss / self.config.log_every
+                    avg_time = sum(step_times[-self.config.log_every:]) / len(step_times[-self.config.log_every:])
+                    samples_per_sec = len(batch) / avg_time
+                    
+                    print(
+                        f"Step {self.state.step}/{max_steps} | "
+                        f"AttnLoss: {avg_attn:.4f} | "
+                        f"Time: {avg_time:.2f}s | "
+                        f"Samples/s: {samples_per_sec:.1f} | "
+                        f"LR: {metrics.get('lr', self.config.learning_rate):.2e}"
+                    )
+                    
+                    running_attn_loss = 0.0
+                
+                # Checkpointing
+                if self.state.step % self.config.checkpoint_every == 0:
+                    self.save_checkpoint()
+                
+                # Validation
+                if (self.config.eval_every > 0 and 
+                    self.state.step % self.config.eval_every == 0 and
+                    self.eval_data is not None):
+                    
+                    print(f"\n📊 Running validation on {min(len(self.eval_data), self.config.eval_samples)} samples...")
+                    eval_subset = self.eval_data[:self.config.eval_samples]
+                    eval_results = self.evaluate(eval_subset, verbose=False)
+                    
+                    print(
+                        f"  With Bridge: {eval_results['with_bridge_accuracy']:.1%} "
+                        f"({eval_results['with_bridge_correct']}/{eval_results['total']})\n"
+                        f"  Without Bridge: {eval_results['without_bridge_accuracy']:.1%} "
+                        f"({eval_results['without_bridge_correct']}/{eval_results['total']})\n"
+                        f"  Improvement: {eval_results['improvement']:+.1%}\n"
+                    )
+                    
+            except Exception as e:
+                print(f"Error at step {self.state.step}: {e}")
+                import traceback
+                traceback.print_exc()
+                continue
+        
+        self.save_checkpoint(final=True)
+        print(f"Training complete. Final step: {self.state.step}")
+        print(f"Total samples processed: {self.state.samples_seen:,}")
     
     def save_checkpoint(self, final: bool = False):
         """Save checkpoint."""

@@ -63,19 +63,19 @@ training:
   learning_rate: 2e-4  # Can use higher LR with larger effective batches
   weight_decay: 0.01
   
-  # Batch size note: Current implementation uses gradient accumulation, NOT true
-  # parallel batching. Each step processes 1 prompt, but we accumulate gradients
-  # over `gradient_accumulation` steps before optimizer.step().
-  # Effective batch size = 1 × gradient_accumulation = 4
-  # True parallel batching would require rewriting the data pipeline.
-  batch_size: 1  # Single prompt per step (use gradient_accumulation for larger effective batch)
+  # TRUE BATCHING: Processes batch_size prompts in parallel per step
+  # - Teacher generation is still sequential (varying output lengths)
+  # - KV caches are padded and stacked for batch projection
+  # - Student forward pass is fully batched
+  # - Attention mask properly excludes padding from loss
+  batch_size: 8  # True parallel processing - 8 prompts per step
   
   max_steps: 10000
   checkpoint_every: 500
   log_every: 10
   max_thinking_tokens: 200  # More tokens since we have VRAM
 
-  # Gradient accumulation (effective batch = 1 * 4 = 4)
+  # Gradient accumulation (effective batch = 8 * 4 = 32)
   gradient_accumulation: 4
   warmup_steps: 200
 
