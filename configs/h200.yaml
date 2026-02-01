@@ -64,11 +64,12 @@ training:
   weight_decay: 0.01
   
   # TRUE BATCHING: Processes batch_size prompts in parallel per step
-  # - Teacher generation is still sequential (varying output lengths)
+  # - Teacher generation is parallel (all prompts at once)
   # - KV caches are padded and stacked for batch projection
   # - Student forward pass is fully batched
   # - Attention mask properly excludes padding from loss
-  batch_size: 8  # True parallel processing - 8 prompts per step
+  # - Generation stops at </think> (we only need the reasoning)
+  batch_size: 32  # True parallel processing - 32 prompts per step
   
   max_steps: 10000
   checkpoint_every: 500
