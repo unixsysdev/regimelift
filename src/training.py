@@ -561,25 +561,45 @@ class HeLMAS_Trainer:
         else:
             think_end_id = self.model_pair.tokenizer.eos_token_id
         
-        # For each sample, find where </think> is (or end of real tokens)
-        cut_positions = []
+        pad_token_id = self.model_pair.tokenizer.pad_token_id
+        
+        # For each sample, find:
+        # 1. first_real_idx: where left-padding ends (first real token)
+        # 2. cut_pos: where </think> is (or end of real tokens)
+        # With LEFT-PADDING: [PAD, PAD, real, real, real, </think>]
+        #                     ^first_real_idx              ^cut_pos
+        
+        sample_ranges = []  # List of (first_real_idx, cut_pos) tuples
         for i in range(batch_size):
-            # Find the </think> token position in this sample
             sample_ids = teacher_ids[i]
+            
+            # Find first real token (where left-padding ends)
+            real_token_positions = (sample_ids != pad_token_id).nonzero(as_tuple=True)[0]
+            if len(real_token_positions) > 0:
+                first_real_idx = real_token_positions[0].item()
+            else:
+                first_real_idx = 0
+            
+            # Find </think> position
             think_positions = (sample_ids == think_end_id).nonzero(as_tuple=True)[0]
             if len(think_positions) > 0:
                 cut_pos = think_positions[0].item() + 1  # Include the </think> token
             else:
-                # No </think> found, use the last real token
-                cut_pos = gen_attention_mask[i].sum().item()
-            cut_positions.append(min(cut_pos, sample_ids.shape[0]))
+                # No </think> found, use the last real token position + 1
+                non_zero = gen_attention_mask[i].nonzero(as_tuple=True)[0]
+                cut_pos = non_zero[-1].item() + 1 if len(non_zero) > 0 else sample_ids.shape[0]
+            
+            cut_pos = min(cut_pos, sample_ids.shape[0])
+            sample_ranges.append((first_real_idx, cut_pos))
         
-        max_seq_len = max(cut_positions)
-        metrics['teacher_thinking_tokens'] = max_seq_len
+        # Calculate the max content length (excluding left padding)
+        max_content_len = max(cut_pos - first_real_idx for first_real_idx, cut_pos in sample_ranges)
+        metrics['teacher_thinking_tokens'] = max_content_len
         
         # === STEP 2: Slice and re-pad KV caches to consistent length ===
-        # The raw cache is [batch, heads, full_seq, dim]
-        # We need to slice each sample to its cut_pos, then re-pad to max_seq_len
+        # IMPORTANT: We slice from first_real_idx to cut_pos (the actual content)
+        # Then right-pad to max_content_len
+        # This removes left-padding from the caches entirely
         
         n_layers = len(teacher_cache_raw)
         padded_cache = []
@@ -593,31 +613,35 @@ class HeLMAS_Trainer:
             v_list = []
             
             for i in range(batch_size):
-                cut_pos = cut_positions[i]
-                # Slice to actual content (up to </think>)
-                k_slice = k_raw[i:i+1, :, :cut_pos, :]  # [1, heads, cut_pos, dim]
-                v_slice = v_raw[i:i+1, :, :cut_pos, :]
+                first_real_idx, cut_pos = sample_ranges[i]
+                content_len = cut_pos - first_real_idx
                 
-                # Pad to max_seq_len if needed
-                if cut_pos < max_seq_len:
-                    pad_len = max_seq_len - cut_pos
+                # Slice to actual content ONLY (skip left padding!)
+                k_slice = k_raw[i:i+1, :, first_real_idx:cut_pos, :]  # [1, heads, content_len, dim]
+                v_slice = v_raw[i:i+1, :, first_real_idx:cut_pos, :]
+                
+                # Right-pad to max_content_len if needed
+                if content_len < max_content_len:
+                    pad_len = max_content_len - content_len
                     k_slice = torch.nn.functional.pad(k_slice, (0, 0, 0, pad_len))
                     v_slice = torch.nn.functional.pad(v_slice, (0, 0, 0, pad_len))
                 
                 k_list.append(k_slice)
                 v_list.append(v_slice)
             
-            k_stacked = torch.cat(k_list, dim=0)  # [batch, heads, max_seq_len, dim]
+            k_stacked = torch.cat(k_list, dim=0)  # [batch, heads, max_content_len, dim]
             v_stacked = torch.cat(v_list, dim=0)
             padded_cache.append((k_stacked, v_stacked))
         
-        # Build attention mask: [batch, max_seq_len]
-        for cut_pos in cut_positions:
-            mask = torch.zeros(max_seq_len, device=self.device)
-            mask[:cut_pos] = 1.0
+        # Build attention mask: [batch, max_content_len]
+        # Now the masks are left-aligned (no left padding in cache anymore)
+        for first_real_idx, cut_pos in sample_ranges:
+            content_len = cut_pos - first_real_idx
+            mask = torch.zeros(max_content_len, device=self.device)
+            mask[:content_len] = 1.0  # Real content, then right-padding
             attention_masks.append(mask)
         
-        attention_mask = torch.stack(attention_masks, dim=0)  # [batch, seq]
+        attention_mask = torch.stack(attention_masks, dim=0)  # [batch, max_content_len]
         
         # === STEP 3: Bridge projection (batched) ===
         with amp_context:
