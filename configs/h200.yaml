@@ -74,7 +74,7 @@ training:
   max_steps: 10000
   checkpoint_every: 500
   log_every: 10
-  max_thinking_tokens: 200  # More tokens since we have VRAM
+  max_thinking_tokens: 8192  # Allow full reasoning traces (stops at </think> anyway)
 
   # Gradient accumulation (effective batch = 8 * 4 = 32)
   gradient_accumulation: 4
