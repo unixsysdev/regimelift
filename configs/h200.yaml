@@ -76,8 +76,9 @@ training:
   log_every: 10
   max_thinking_tokens: 8192  # Allow full reasoning traces (stops at </think> anyway)
 
-  # Gradient accumulation (effective batch = 8 * 4 = 32)
-  gradient_accumulation: 4
+  # Gradient accumulation (effective batch = 32 * 2 = 64)
+  # Reduced from 4 to 2 for more optimizer updates per dataset
+  gradient_accumulation: 2
   warmup_steps: 200
 
   # Loss weights (RFC: Attention Consistency)
