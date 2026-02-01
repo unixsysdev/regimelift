@@ -60,15 +60,22 @@ bridge:
 
 training:
   # Core hyperparameters
-  learning_rate: 2e-4  # Can use higher LR with larger batches
+  learning_rate: 2e-4  # Can use higher LR with larger effective batches
   weight_decay: 0.01
-  batch_size: 8  # H200 can handle much larger batches
+  
+  # Batch size note: Current implementation uses gradient accumulation, NOT true
+  # parallel batching. Each step processes 1 prompt, but we accumulate gradients
+  # over `gradient_accumulation` steps before optimizer.step().
+  # Effective batch size = 1 × gradient_accumulation = 4
+  # True parallel batching would require rewriting the data pipeline.
+  batch_size: 1  # Single prompt per step (use gradient_accumulation for larger effective batch)
+  
   max_steps: 10000
   checkpoint_every: 500
   log_every: 10
   max_thinking_tokens: 200  # More tokens since we have VRAM
 
-  # Gradient accumulation (effective batch = 8 * 4 = 32)
+  # Gradient accumulation (effective batch = 1 * 4 = 4)
   gradient_accumulation: 4
   warmup_steps: 200
 
@@ -76,6 +83,10 @@ training:
   attention_consistency_weight: 1.0
   auxiliary_ce_weight: 0.1
   consistency_layers: "all"  # Can afford to compute on all layers
+  
+  # Validation: run evaluation on held-out GSM8K test set
+  eval_every: 1000  # Run validation every N steps (0 to disable)
+  eval_samples: 50  # Number of samples for validation
 
   # H200-specific optimizations
   use_amp: true  # Automatic Mixed Precision

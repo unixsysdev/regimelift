@@ -26,7 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.training import HeLMAS_Trainer, create_thinking_prompt
-from src.data_loader import create_data_iterator, get_training_data
+from src.data_loader import create_data_iterator, get_training_data, get_validation_data
 
 
 # Sample prompts for dry-run testing
@@ -93,6 +93,19 @@ def parse_args():
         help="Path to file with training prompts (one per line, overrides --dataset)"
     )
     
+    # Validation options
+    parser.add_argument(
+        "--eval-samples",
+        type=int,
+        default=50,
+        help="Number of validation samples (0 to disable validation)"
+    )
+    parser.add_argument(
+        "--no-validation",
+        action="store_true",
+        help="Disable validation entirely"
+    )
+    
     return parser.parse_args()
 
 
@@ -146,9 +159,21 @@ def main():
         )
         max_steps = args.max_steps
     
-    # Create trainer
+    # Load validation data (unless disabled)
+    eval_data = None
+    if not args.no_validation and not args.dry_run and args.eval_samples > 0:
+        # Use GSM8K test split for validation (standard benchmark)
+        eval_data = get_validation_data(
+            dataset="gsm8k",
+            max_samples=args.eval_samples
+        )
+        print(f"✓ Validation enabled: {len(eval_data)} samples from GSM8K test")
+    else:
+        print("✗ Validation disabled")
+    
+    # Create trainer with validation data
     print(f"\n🔧 Loading models from config: {args.config}")
-    trainer = HeLMAS_Trainer.from_config(args.config)
+    trainer = HeLMAS_Trainer.from_config(args.config, eval_data=eval_data)
     
     # Resume from checkpoint if specified
     if args.checkpoint:

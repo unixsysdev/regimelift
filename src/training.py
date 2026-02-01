@@ -287,8 +287,19 @@ class HeLMAS_Trainer:
         self.writer = None
     
     @classmethod
-    def from_config(cls, config_path: str) -> "HeLMAS_Trainer":
-        """Create trainer from configuration file."""
+    def from_config(
+        cls, 
+        config_path: str,
+        eval_data: Optional[List[Tuple[str, str]]] = None
+    ) -> "HeLMAS_Trainer":
+        """
+        Create trainer from configuration file.
+        
+        Args:
+            config_path: Path to YAML configuration file
+            eval_data: Optional list of (question, answer) tuples for validation
+                       If provided, validation runs every eval_every steps
+        """
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
         
@@ -301,7 +312,8 @@ class HeLMAS_Trainer:
             bridge=bridge,
             config=train_config,
             checkpoint_dir=config.get('paths', {}).get('checkpoints', 'checkpoints'),
-            log_dir=config.get('paths', {}).get('logs', 'logs')
+            log_dir=config.get('paths', {}).get('logs', 'logs'),
+            eval_data=eval_data
         )
     
     def _get_layer_indices(self) -> Optional[List[int]]:

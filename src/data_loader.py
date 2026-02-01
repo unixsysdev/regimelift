@@ -295,3 +295,53 @@ def get_training_data(
         shuffle=True,
         infinite=True
     )
+
+
+def get_validation_data(
+    dataset: str = "gsm8k",
+    max_samples: int = 50,
+    cache_dir: str = "data/cache"
+) -> List[tuple]:
+    """
+    Get validation data as (question, answer) tuples.
+    
+    Uses the test split for evaluation.
+    
+    Args:
+        dataset: Dataset name ("gsm8k" recommended for validation)
+        max_samples: Number of samples for validation
+        cache_dir: Where to cache downloaded data
+        
+    Returns:
+        List of (question, ground_truth_answer) tuples
+    """
+    from datasets import load_dataset
+    
+    print(f"📊 Loading validation data: {dataset} (test split, {max_samples} samples)")
+    
+    if dataset == "gsm8k":
+        ds = load_dataset("gsm8k", "main", split="test", cache_dir=cache_dir)
+        pairs = []
+        for i, item in enumerate(ds):
+            if i >= max_samples:
+                break
+            # GSM8K has "question" and "answer" fields
+            # answer contains the full solution with #### final_answer
+            pairs.append((item["question"], item["answer"]))
+        print(f"  Loaded {len(pairs)} validation samples")
+        return pairs
+    
+    elif dataset == "math":
+        ds = load_dataset("hendrycks/competition_math", split="test", cache_dir=cache_dir)
+        pairs = []
+        for i, item in enumerate(ds):
+            if i >= max_samples:
+                break
+            # MATH has "problem" and "solution" fields
+            pairs.append((item["problem"], item["solution"]))
+        print(f"  Loaded {len(pairs)} validation samples")
+        return pairs
+    
+    else:
+        print(f"  Warning: {dataset} doesn't have a standard test split, using GSM8K")
+        return get_validation_data("gsm8k", max_samples, cache_dir)
