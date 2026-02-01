@@ -10,7 +10,7 @@ extraction and injection. Supports:
 """
 
 import torch
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, List
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -395,6 +395,71 @@ class HeLMAS_ModelPair:
             )
         
         return outputs.sequences, outputs.past_key_values
+    
+    def teacher_generate_batched(
+        self,
+        prompts: List[str],
+        max_new_tokens: int = 100,
+        stop_token: str = "</think>",
+        **kwargs
+    ) -> Tuple[torch.Tensor, Any, torch.Tensor]:
+        """
+        Generate tokens with Teacher for multiple prompts in parallel.
+        
+        Uses left-padding for generation, stops at stop_token for each sequence.
+        Returns the batched output with attention mask indicating real vs padding.
+        
+        Args:
+            prompts: List of input prompts
+            max_new_tokens: Maximum tokens to generate
+            stop_token: Token to stop generation at (default: </think>)
+            
+        Returns:
+            Tuple of:
+            - generated_ids: [batch, max_seq_len]
+            - past_key_values: KV cache for the batch
+            - attention_mask: [batch, max_seq_len] (1=real, 0=pad)
+        """
+        # Tokenize with LEFT padding (required for batched generation)
+        # Save original padding side and restore after
+        original_padding_side = self.tokenizer.padding_side
+        self.tokenizer.padding_side = "left"
+        
+        inputs = self.tokenizer(
+            prompts,
+            padding=True,
+            return_tensors="pt"
+        )
+        inputs = {k: v.to(self.teacher.device) for k, v in inputs.items()}
+        
+        # Restore padding side
+        self.tokenizer.padding_side = original_padding_side
+        
+        # Get stop token ID
+        stop_token_ids = self.tokenizer.encode(stop_token, add_special_tokens=False)
+        if stop_token_ids:
+            stop_token_id = stop_token_ids[-1]  # Use last token of the stop sequence
+        else:
+            stop_token_id = self.tokenizer.eos_token_id
+        
+        with torch.no_grad():
+            outputs = self.teacher.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                return_dict_in_generate=True,
+                output_scores=True,
+                use_cache=True,
+                pad_token_id=self.tokenizer.pad_token_id,
+                eos_token_id=stop_token_id,  # Stop at </think>
+                **kwargs
+            )
+        
+        # Build attention mask for the generated sequences
+        # 1 where there's a real token, 0 where there's padding
+        generated_ids = outputs.sequences  # [batch, seq_len]
+        attention_mask = (generated_ids != self.tokenizer.pad_token_id).long()
+        
+        return generated_ids, outputs.past_key_values, attention_mask
     
     def student_forward(
         self,

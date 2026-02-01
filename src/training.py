@@ -538,71 +538,83 @@ class HeLMAS_Trainer:
             enabled=self.use_amp
         )
         
-        # === STEP 1: Teacher generates for each prompt (sequential) ===
-        # Note: Teacher generation can't be easily batched due to varying output lengths
-        teacher_caches = []
-        max_seq_len = 0
+        # === STEP 1: Teacher generates for all prompts IN PARALLEL ===
+        # Uses batched generation with left-padding and </think> stop token
+        teacher_ids, teacher_cache_raw, gen_attention_mask = self.model_pair.teacher_generate_batched(
+            prompts,
+            max_new_tokens=self.config.max_thinking_tokens,
+            stop_token="</think>"
+        )
         
-        with torch.no_grad():
-            for prompt in prompts:
-                teacher_ids, teacher_cache = self.model_pair.teacher_generate(
-                    prompt,
-                    max_new_tokens=self.config.max_thinking_tokens
-                )
-                
-                # Extract and slice at </think>
-                cache = extract_kv_cache(
-                    type('Output', (), {'past_key_values': teacher_cache})()
-                )
-                sliced_cache, cut_pos = slice_cache_at_token(
-                    cache,
-                    teacher_ids,
-                    self.model_pair.tokenizer,
-                    end_token="</think>",
-                    include_end_token=True
-                )
-                
-                teacher_caches.append(sliced_cache)
-                seq_len = sliced_cache[0][0].shape[2]  # [batch, heads, seq, dim]
-                max_seq_len = max(max_seq_len, seq_len)
+        # teacher_ids: [batch, max_seq_len]
+        # teacher_cache_raw: tuple of (k, v) per layer, each [batch, heads, seq, dim]
+        # gen_attention_mask: [batch, max_seq_len] - 1 for real, 0 for padding
         
+        # Extract the KV cache (already in the right format from generation)
+        # The cache from generate() includes all positions up to the stop token
+        # We need to slice each sample to its </think> position
+        
+        # Find </think> position for each sample
+        think_end_id = self.model_pair.tokenizer.encode("</think>", add_special_tokens=False)
+        if think_end_id:
+            think_end_id = think_end_id[-1]
+        else:
+            think_end_id = self.model_pair.tokenizer.eos_token_id
+        
+        # For each sample, find where </think> is (or end of real tokens)
+        cut_positions = []
+        for i in range(batch_size):
+            # Find the </think> token position in this sample
+            sample_ids = teacher_ids[i]
+            think_positions = (sample_ids == think_end_id).nonzero(as_tuple=True)[0]
+            if len(think_positions) > 0:
+                cut_pos = think_positions[0].item() + 1  # Include the </think> token
+            else:
+                # No </think> found, use the last real token
+                cut_pos = gen_attention_mask[i].sum().item()
+            cut_positions.append(min(cut_pos, sample_ids.shape[0]))
+        
+        max_seq_len = max(cut_positions)
         metrics['teacher_thinking_tokens'] = max_seq_len
         
-        # === STEP 2: Pad and stack KV caches ===
-        # Each cache: list of (k, v) tuples per layer
-        # k/v shape: [1, heads, seq, dim] - need to pad seq dim and stack batch
+        # === STEP 2: Slice and re-pad KV caches to consistent length ===
+        # The raw cache is [batch, heads, full_seq, dim]
+        # We need to slice each sample to its cut_pos, then re-pad to max_seq_len
         
-        n_layers = len(teacher_caches[0])
+        n_layers = len(teacher_cache_raw)
         padded_cache = []
         attention_masks = []
         
         for layer_idx in range(n_layers):
+            k_raw, v_raw = teacher_cache_raw[layer_idx]
+            # k_raw: [batch, heads, full_seq, dim]
+            
             k_list = []
             v_list = []
             
-            for cache in teacher_caches:
-                k, v = cache[layer_idx]
-                seq_len = k.shape[2]
+            for i in range(batch_size):
+                cut_pos = cut_positions[i]
+                # Slice to actual content (up to </think>)
+                k_slice = k_raw[i:i+1, :, :cut_pos, :]  # [1, heads, cut_pos, dim]
+                v_slice = v_raw[i:i+1, :, :cut_pos, :]
                 
-                # Pad to max_seq_len
-                if seq_len < max_seq_len:
-                    pad_len = max_seq_len - seq_len
-                    k = torch.nn.functional.pad(k, (0, 0, 0, pad_len))  # Pad seq dim
-                    v = torch.nn.functional.pad(v, (0, 0, 0, pad_len))
+                # Pad to max_seq_len if needed
+                if cut_pos < max_seq_len:
+                    pad_len = max_seq_len - cut_pos
+                    k_slice = torch.nn.functional.pad(k_slice, (0, 0, 0, pad_len))
+                    v_slice = torch.nn.functional.pad(v_slice, (0, 0, 0, pad_len))
                 
-                k_list.append(k)
-                v_list.append(v)
+                k_list.append(k_slice)
+                v_list.append(v_slice)
             
-            # Stack: [batch, heads, seq, dim]
-            k_stacked = torch.cat(k_list, dim=0)
+            k_stacked = torch.cat(k_list, dim=0)  # [batch, heads, max_seq_len, dim]
             v_stacked = torch.cat(v_list, dim=0)
             padded_cache.append((k_stacked, v_stacked))
         
         # Build attention mask: [batch, max_seq_len]
-        for cache in teacher_caches:
-            seq_len = cache[0][0].shape[2]
+        for cut_pos in cut_positions:
             mask = torch.zeros(max_seq_len, device=self.device)
-            mask[:seq_len] = 1.0
+            mask[:cut_pos] = 1.0
             attention_masks.append(mask)
         
         attention_mask = torch.stack(attention_masks, dim=0)  # [batch, seq]
