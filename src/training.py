@@ -630,6 +630,12 @@ class HeLMAS_Trainer:
             ).to(self.device)
             query_mask = torch.ones_like(query_ids)
         
+        # CRITICAL: Build full attention mask for past_key_values + query_ids
+        # attention_mask: [batch, past_len] - from STEP 2 (KV cache padding)
+        # query_mask: [batch, query_len] - from STEP 4 (input tokens)
+        # full_attention_mask: [batch, past_len + query_len]
+        full_attention_mask = torch.cat([attention_mask, query_mask], dim=1)
+        
         # === STEP 5: Student forward with projected cache (batched) ===
         self.attn_hook.attach(self.model_pair.student, self._get_layer_indices())
         
@@ -637,6 +643,7 @@ class HeLMAS_Trainer:
             outputs_projected = self.model_pair.student_forward(
                 query_ids,
                 past_key_values=projected_cache_tuple,
+                attention_mask=full_attention_mask,  # CRITICAL: Prevents attending to padding
                 use_cache=True
             )
         
@@ -664,12 +671,17 @@ class HeLMAS_Trainer:
             )
             native_cache = outputs_native_temp.past_key_values
         
+        # Build full mask for native cache + query
+        # native_inputs.attention_mask: [batch, native_seq_len]
+        full_native_mask = torch.cat([native_inputs.attention_mask, query_mask], dim=1)
+        
         self.attn_hook.attach(self.model_pair.student, self._get_layer_indices())
         
         with amp_context:
             outputs_native = self.model_pair.student_forward(
                 query_ids,
                 past_key_values=native_cache,
+                attention_mask=full_native_mask,  # CRITICAL: Consistent masking
                 use_cache=True
             )
         
