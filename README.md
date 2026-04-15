@@ -1,22 +1,12 @@
-# He-LMAS / HeLMAS-3n
+# HeLMAS-3n (Active) / He-LMAS (Archived)
 
-He-LMAS started as a heterogeneous KV-cache bridge project: transfer reasoning across different model families by projecting teacher cache/state into a smaller student. HeLMAS-3n is the next stage: same-parent-model regime uplift inside **Gemma 3n E4B**, where the task is to lift a low-activation nested state into the full-activation regime of the same checkpoint.
+This repository is now centered on **HeLMAS-3n**: same-parent-model regime uplift inside Gemma 3n E4B.
 
-## Two attempts, one repository
-
-### Legacy starting point: He-LMAS
-The original He-LMAS project explored cross-model transfer between different Qwen checkpoints. It focused on RoPE-aware KV projection, layer blending, and attention-consistency-style objectives.
-
-That work is now archived here:
-- [Legacy He-LMAS overview](archive/legacy-he-lmas/README.md)
-- [Frozen targeted experiment v1](archive/experiments/targeted_site_study_v1/README.md)
-
-### Current program: HeLMAS-3n
-HeLMAS-3n asks a narrower and more falsifiable question:
+Primary question:
 
 > Can a low-activation nested regime inside Gemma 3n E4B be uplifted into the full-activation regime well enough to recover continuation behavior after handoff?
 
-This is not cross-family cache porting. It is regime-to-regime transport inside one parent model.
+The earlier **He-LMAS** heterogeneous KV-bridge project is preserved for historical context under `archive/` and is no longer the active development target.
 
 ## Current status
 
@@ -43,6 +33,7 @@ Active validation:
 
 - `helmas3n/`: active code, configs, scripts, tests, and live artifacts for the Gemma 3n program.
 - `archive/`: frozen historical material and completed experiment snapshots.
+- `archive/legacy-he-lmas/code/`: relocated root-level legacy code (`configs/`, `scripts/`, `src/`, `tests/`).
 - `paper/`: TeX source, generated figures, and the CI build path for the research draft.
 
 ## Practical note

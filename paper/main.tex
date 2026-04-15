@@ -28,7 +28,7 @@
 \maketitle
 
 \begin{abstract}
-HeLMAS began as a heterogeneous KV-bridge project: the goal was to move reasoning from a larger teacher model into a smaller student by projecting internal state across model families. That original direction is now preserved as archived history in this repository, but the current project has shifted to a cleaner and more falsifiable question: can a low-activation nested regime inside the same Gemma 3n E4B checkpoint be uplifted into the full-activation regime well enough to recover continuation behavior after handoff? We study paired low/full forward passes on the same prompt prefixes, extract matched residual-stream states and caches, and train lightweight translators that attempt to approximate the full regime from the low regime. Across completed pilot, layer-sweep, suffix-span, and targeted-site experiments, the low/full regimes are clearly separated, identity control is exact, and the best learned intervention site is a specific full-regime patch surface at 
+This paper focuses on HeLMAS-3n: nested-state uplift inside a single Gemma 3n E4B checkpoint. The active question is whether a low-activation nested regime can be translated into the full-activation regime well enough to recover continuation behavior after handoff. We study paired low/full forward passes on identical prompt prefixes, extract matched residual-stream states and caches, and train lightweight translators that approximate full-regime state from low-regime state. Across completed pilot, layer-sweep, suffix-span, and targeted-site experiments, the low/full regimes are clearly separated, identity control is exact, and the best learned intervention site is a specific full-regime patch surface at
 \method{layer34,last1}. A broader MLP baseline improves local state alignment but dilutes the site-specific continuation effect. The current evidence therefore points to intervention placement, not raw model capacity, as the dominant bottleneck.
 \end{abstract}
 
@@ -36,7 +36,7 @@ HeLMAS began as a heterogeneous KV-bridge project: the goal was to move reasonin
 \newpage
 
 \section{Introduction}
-The original He-LMAS idea asked whether one LLM could be made to continue another model's reasoning by transferring a cache-like internal representation. That was ambitious, but it also mixed several hard problems at once: cross-family geometry, RoPE compatibility, cache layout mismatch, and continuation stability.
+HeLMAS-3n studies same-parent-model handoff inside Gemma 3n E4B. The aim is practical and falsifiable: recover full-regime continuation behavior from low-regime prefix state using a lightweight uplift map.
 
 HeLMAS-3n deliberately narrows the question. Gemma 3n E4B is designed around a nested / MatFormer-style structure with selective activation and dynamic resource usage \cite{gemma3n2025,mrl2022}. That makes it a better testbed for a same-parent-state uplift hypothesis: the low-activation regime is not an alien model, but a compressed sibling of the full regime. If the sibling relation is real, the translation from low to full should be a small corrective map rather than a universal bridge.
 
@@ -47,24 +47,15 @@ Can a low-activation Gemma 3n E4B prefix state be uplifted into the correspondin
 
 This draft is conservative. It includes only completed results and explicitly labels the larger held-out80 rerun as active validation.
 
-\section{From HeLMAS to HeLMAS-3n}
-The repository now contains two distinct attempts.
+\section{Historical context (brief)}
+The repository includes archived material from an earlier heterogeneous He-LMAS bridge attempt \cite{helmasLegacy2026}. That line remains useful as context but is not the active research track.
 
-\subsection{Legacy attempt: heterogeneous KV transfer}
-The legacy He-LMAS project attempted a cross-model bridge. The central idea was to build a RoPE-aware KV projection and a training objective that would preserve reasoning when moving from a larger teacher to a smaller student \cite{helmasLegacy2026}. The original README, now archived, framed that as a lossless reasoning transfer problem across heterogeneous Qwen checkpoints.
-
-That attempt mattered because it motivated the broader design space, but it was not the right abstraction for the current evidence. A cross-family bridge asks too much of a single translator. It entangles geometry, model identity, and behavior in one step.
-
-\subsection{Current attempt: same-parent regime uplift}
-HeLMAS-3n makes a narrower claim. The source and target are the same Gemma 3n E4B checkpoint under two activation regimes \cite{gemma3n2025}. The learning problem is to predict the full-regime internal state from the low-regime internal state, ideally with only a small correction.
-
-This is the key change in scientific framing:
+The current track is HeLMAS-3n: same-checkpoint regime uplift in Gemma 3n E4B \cite{gemma3n2025}. The key framing change is:
 \begin{itemize}[leftmargin=1.4em]
-    \item Legacy HeLMAS: cross-model transfer.
+    \item Archived He-LMAS: cross-model transfer.
     \item HeLMAS-3n: same-parent regime uplift.
 \end{itemize}
-
-That change is what made the experiment falsifiable.
+This narrower formulation is what made the current experiments falsifiable.
 
 \section{Method}
 \subsection{Paired-state extraction}

@@ -1,6 +1,6 @@
 # Paper Draft
 
-This directory contains the TeX source and generated assets for the HeLMAS-3n research draft.
+This directory contains the TeX source and generated assets for the active HeLMAS-3n research draft. Legacy He-LMAS material is referenced only as archived context.
 
 ## Build
 

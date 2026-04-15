@@ -2,6 +2,8 @@
 
 > **Core Thesis**: The KV Cache is a fossilized record of causal history. We inject a tensor that *looks like* it was produced by the small model, but encodes the big model's intelligence.
 
+> **Archive status**: This is legacy/frozen material. Active development is in `helmas3n/`. Legacy code formerly at repository root now lives under `archive/legacy-he-lmas/code/`.
+
 ## Overview
 
 He-LMAS enables **lossless reasoning transfer** between heterogeneous LLMs (e.g., Qwen3-8B → Qwen3-1.7B) through RoPE-aware KV cache projection. Instead of text-based handoffs, we surgically transplant the Teacher's "thought process" into the Student's attention memory.
@@ -55,13 +57,13 @@ The Student learns to see the same "Context Vector" when looking at projected Te
 pip install -r requirements.txt
 
 # Run baseline evaluation (see where 1.7B fails)
-python scripts/baseline_eval.py
+python archive/legacy-he-lmas/code/scripts/baseline_eval.py
 
 # Train the bridge projector (H200 optimized)
-python scripts/train_bridge.py --config configs/h200.yaml --dataset gsm8k
+python archive/legacy-he-lmas/code/scripts/train_bridge.py --config archive/legacy-he-lmas/code/configs/h200.yaml --dataset gsm8k
 
 # Run inference demo
-python scripts/inference_demo.py --checkpoint checkpoints/bridge_final.pt
+python archive/legacy-he-lmas/code/scripts/inference_demo.py --checkpoint checkpoints/bridge_final.pt
 ```
 
 ## Configuration Options
@@ -113,11 +115,11 @@ Validation compares:
 
 ## Key Components
 
-- **`src/bridge.py`**: V2 Bridge with layer blending, deep projectors, full RoPE
-- **`src/training.py`**: Attention Consistency Loss + validation loop
-- **`src/rope_utils.py`**: RoPE rotation/de-rotation utilities
-- **`src/kv_cache_utils.py`**: KV cache extraction and injection
-- **`src/data_loader.py`**: HuggingFace dataset integration (GSM8K, MATH, etc.)
+- **`archive/legacy-he-lmas/code/src/bridge.py`**: V2 Bridge with layer blending, deep projectors, full RoPE
+- **`archive/legacy-he-lmas/code/src/training.py`**: Attention Consistency Loss + validation loop
+- **`archive/legacy-he-lmas/code/src/rope_utils.py`**: RoPE rotation/de-rotation utilities
+- **`archive/legacy-he-lmas/code/src/kv_cache_utils.py`**: KV cache extraction and injection
+- **`archive/legacy-he-lmas/code/src/data_loader.py`**: HuggingFace dataset integration (GSM8K, MATH, etc.)
 
 ## H200 Optimizations
 
@@ -128,7 +130,7 @@ The framework includes specific optimizations for NVIDIA H200:
 - **AMP Training**: Mixed precision with GradScaler
 - **torch.compile()**: Kernel fusion and optimization
 
-See `configs/h200.yaml` for the full H200 configuration.
+See `archive/legacy-he-lmas/code/configs/h200.yaml` for the full H200 configuration.
 
 ## Datasets Supported
 
