@@ -85,3 +85,42 @@ jobs:
           name: "HeLMAS-3n Paper ${{ github.ref_name }}"
           files: release/main.pdf
           generate_release_notes: true
+
+  paper_release_main:
+    runs-on: ubuntu-latest
+    needs: paper
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Move rolling paper tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f paper-main "${GITHUB_SHA}"
+          git push origin refs/tags/paper-main --force
+
+      - name: Download paper artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: helmas3n-paper
+          path: release
+
+      - name: Publish rolling paper release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: paper-main
+          name: "HeLMAS-3n Paper (main)"
+          body: |
+            Rolling paper build from `main`.
+
+            Source commit: `${{ github.sha }}`
+          prerelease: true
+          make_latest: false
+          files: release/main.pdf
+          overwrite_files: true
