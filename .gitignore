@@ -10,3 +10,13 @@ chatgpt-web-instant/
 timm/
 torchvision/
 helmas3n/helmas3n/
+
+# LaTeX build byproducts
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.toc

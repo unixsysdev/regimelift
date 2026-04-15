@@ -16,6 +16,15 @@ A convenience `Makefile` is included:
 cd paper && make
 ```
 
+## CI build
+
+The PDF is built in GitHub Actions via `.github/workflows/ci.yml`.
+
+- Job: `paper`
+- Output artifact: `helmas3n-paper` (`paper/main.pdf`)
+
+The repository tracks paper sources and generated analysis assets. LaTeX temporary build files and the compiled PDF are CI outputs, not versioned source files.
+
 ## What is included
 
 - TeX source for the paper narrative.
