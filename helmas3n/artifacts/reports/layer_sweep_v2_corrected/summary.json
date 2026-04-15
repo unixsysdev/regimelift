@@ -1,0 +1,42 @@
+{
+  "out_dir": "/home/marcel/Work/He-LMAS/helmas3n/artifacts/reports/layer_sweep_v2_corrected",
+  "num_rows": 34,
+  "num_prompts": 40,
+  "layers": [
+    0,
+    4,
+    8,
+    12,
+    16,
+    20,
+    24,
+    28,
+    32,
+    34
+  ],
+  "methods": [
+    "identity",
+    "mlp",
+    "oracle_full_state"
+  ],
+  "horizons": [
+    1,
+    4,
+    8,
+    16
+  ],
+  "baseline": {
+    "low_to_full_live_nopatch_h1": 0.0,
+    "low_to_full_live_nopatch_h4": 0.00625,
+    "low_to_full_live_nopatch_h8": 0.009375,
+    "low_to_full_live_nopatch_h16": 0.0125,
+    "low_to_full_cached_h1": 0.0,
+    "low_to_full_cached_h4": 0.01875,
+    "low_to_full_cached_h8": 0.021875,
+    "low_to_full_cached_h16": 0.0171875,
+    "low_native_h1": 0.0,
+    "low_native_h4": 0.01875,
+    "low_native_h8": 0.015625,
+    "low_native_h16": 0.025
+  }
+}

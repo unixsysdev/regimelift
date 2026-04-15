@@ -1,0 +1,93 @@
+{
+  "paired_root": "/home/marcel/Work/He-LMAS/helmas3n/artifacts/paired_states_killtest40",
+  "hidden_dim": 2048,
+  "num_layers": 35,
+  "pilot_extract_config": "/home/marcel/Work/He-LMAS/helmas3n/configs/extract_killtest40.yaml",
+  "heldout_extract_config": "/home/marcel/Work/He-LMAS/helmas3n/helmas3n/configs/extract_killtest40_holdout80.yaml",
+  "broad_checkpoint": "/home/marcel/Work/He-LMAS/helmas3n/artifacts/reports/killtest_v3/checkpoints/mlp/last.pt",
+  "layer16_checkpoint": "/home/marcel/Work/He-LMAS/helmas3n/artifacts/reports/targeted_runs/checkpoints/layer16_last1/last.pt",
+  "layer34_checkpoint": "/home/marcel/Work/He-LMAS/helmas3n/artifacts/reports/targeted_runs/checkpoints/layer34_last1/last.pt",
+  "horizons": [
+    1,
+    4,
+    8,
+    16
+  ]
+}
+[targeted] split=pilot prompts=40
+[layer-sweep] caching prompt 1/40
+[layer-sweep] caching prompt 10/40
+[layer-sweep] caching prompt 20/40
+[layer-sweep] caching prompt 30/40
+[layer-sweep] caching prompt 40/40
+[targeted] low_to_full_no_patch: prompt 1/40
+[targeted] low_to_full_no_patch: prompt 10/40
+[targeted] low_to_full_no_patch: prompt 20/40
+[targeted] low_to_full_no_patch: prompt 30/40
+[targeted] low_to_full_no_patch: prompt 40/40
+[targeted] identity: prompt 1/40
+[targeted] identity: prompt 10/40
+[targeted] identity: prompt 20/40
+[targeted] identity: prompt 30/40
+[targeted] identity: prompt 40/40
+[targeted] broad_mlp: prompt 1/40
+[targeted] broad_mlp: prompt 10/40
+[targeted] broad_mlp: prompt 20/40
+[targeted] broad_mlp: prompt 30/40
+[targeted] broad_mlp: prompt 40/40
+[targeted] targeted_mlp: prompt 1/40
+[targeted] targeted_mlp: prompt 10/40
+[targeted] targeted_mlp: prompt 20/40
+[targeted] targeted_mlp: prompt 30/40
+[targeted] targeted_mlp: prompt 40/40
+[targeted] oracle_layer16: prompt 1/40
+[targeted] oracle_layer16: prompt 10/40
+[targeted] oracle_layer16: prompt 20/40
+[targeted] oracle_layer16: prompt 30/40
+[targeted] oracle_layer16: prompt 40/40
+[targeted] oracle_layer34: prompt 1/40
+[targeted] oracle_layer34: prompt 10/40
+[targeted] oracle_layer34: prompt 20/40
+[targeted] oracle_layer34: prompt 30/40
+[targeted] oracle_layer34: prompt 40/40
+[targeted] oracle_stride: prompt 1/40
+[targeted] oracle_stride: prompt 10/40
+[targeted] oracle_stride: prompt 20/40
+[targeted] oracle_stride: prompt 30/40
+[targeted] oracle_stride: prompt 40/40
+[targeted] low_to_full_no_patch: prompt 1/40
+[targeted] low_to_full_no_patch: prompt 10/40
+[targeted] low_to_full_no_patch: prompt 20/40
+[targeted] low_to_full_no_patch: prompt 30/40
+[targeted] low_to_full_no_patch: prompt 40/40
+[targeted] identity: prompt 1/40
+[targeted] identity: prompt 10/40
+[targeted] identity: prompt 20/40
+[targeted] identity: prompt 30/40
+[targeted] identity: prompt 40/40
+[targeted] broad_mlp: prompt 1/40
+[targeted] broad_mlp: prompt 10/40
+[targeted] broad_mlp: prompt 20/40
+[targeted] broad_mlp: prompt 30/40
+[targeted] broad_mlp: prompt 40/40
+[targeted] targeted_mlp: prompt 1/40
+[targeted] targeted_mlp: prompt 10/40
+[targeted] targeted_mlp: prompt 20/40
+[targeted] targeted_mlp: prompt 30/40
+[targeted] targeted_mlp: prompt 40/40
+[targeted] oracle_layer16: prompt 1/40
+[targeted] oracle_layer16: prompt 10/40
+[targeted] oracle_layer16: prompt 20/40
+[targeted] oracle_layer16: prompt 30/40
+[targeted] oracle_layer16: prompt 40/40
+[targeted] oracle_layer34: prompt 1/40
+[targeted] oracle_layer34: prompt 10/40
+[targeted] oracle_layer34: prompt 20/40
+[targeted] oracle_layer34: prompt 30/40
+[targeted] oracle_layer34: prompt 40/40
+[targeted] oracle_stride: prompt 1/40
+[targeted] oracle_stride: prompt 10/40
+[targeted] oracle_stride: prompt 20/40
+[targeted] oracle_stride: prompt 30/40
+[targeted] oracle_stride: prompt 40/40
+[targeted] split=heldout prompts=10

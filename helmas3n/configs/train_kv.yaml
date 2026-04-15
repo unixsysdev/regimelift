@@ -1,0 +1,45 @@
+seed: 7
+
+experiment:
+  name: kv_uplift_lowrank
+  out_dir: artifacts/checkpoints/kv_uplift_lowrank
+
+data:
+  root_dir: artifacts/paired_states
+  target: kv
+  batch_size: 64
+  num_workers: 0
+
+model:
+  kind: lowrank  # identity | mean_delta | global_linear | linear | lowrank | mlp | flow
+  rank: 64
+  mlp_expansion: 2.0
+  mlp_shared: false
+  freeze_mean_delta: true
+
+optimizer:
+  lr: 0.0003
+  weight_decay: 0.0
+
+training:
+  epochs: 5
+  grad_clip: 1.0
+  eval_every_steps: 200
+
+loss:
+  mse_weight: 1.0
+  cosine_weight: 0.2
+  attention_weight: 0.2
+  logit_weight: 0.0
+
+logit_head:
+  enabled: false
+  snapshot_path: artifacts/paired_states/logit_head.pt
+
+attention_proxy:
+  enabled: true
+  num_heads: 16
+
+evaluation:
+  max_eval_batches: 50
+  continuation_steps: 16

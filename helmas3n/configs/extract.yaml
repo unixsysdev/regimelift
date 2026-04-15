@@ -1,0 +1,50 @@
+seed: 7
+
+model:
+  name: google/gemma-3n-e4b
+  device: cuda
+  dtype: bfloat16
+  trust_remote_code: true
+  load_overrides: {}
+  text_only: true
+
+activation:
+  low:
+    model_overrides: {}
+    runtime_overrides: {}
+    text_overrides:
+      activation_sparsity_pattern: 0.95
+      num_kv_shared_layers: 20
+      altup_correct_scale: false
+      altup_active_idx: 0
+  full:
+    model_overrides: {}
+    runtime_overrides: {}
+    text_overrides:
+      activation_sparsity_pattern: 0.0
+      num_kv_shared_layers: 0
+      altup_correct_scale: true
+      altup_active_idx: 0
+
+data:
+  prompts_path: ../../data/torture_tests.json
+  prompt_field: prompt
+  id_field: id
+  max_prompts: 200
+  max_length: 1024
+
+sampling:
+  layer_stride: 4
+  include_layers: []
+  last_n_positions: 32
+  include_positions: []
+
+targets:
+  capture_kv: true
+  capture_logits: true
+  logits_topk: 128
+
+output:
+  dir: artifacts/paired_states
+  shard_size: 4096
+  save_logit_head_snapshot: true

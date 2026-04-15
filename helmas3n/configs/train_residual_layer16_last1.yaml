@@ -1,0 +1,41 @@
+seed: 7
+
+experiment:
+  name: residual_uplift_layer16_last1
+  out_dir: ../artifacts/reports/targeted_runs/checkpoints/layer16_last1
+
+data:
+  root_dir: ../artifacts/targeted_paired_states/layer16_last1_train
+  target: residual
+  batch_size: 64
+  num_workers: 0
+
+model:
+  kind: mlp
+  rank: 64
+  mlp_expansion: 2.0
+  mlp_shared: false
+  freeze_mean_delta: true
+
+optimizer:
+  lr: 0.0003
+  weight_decay: 0.0
+
+training:
+  epochs: 3
+  grad_clip: 1.0
+  eval_every_steps: 200
+
+loss:
+  mse_weight: 1.0
+  cosine_weight: 0.2
+  logit_weight: 0.3
+  logit_only_final_layer: true
+
+logit_head:
+  enabled: true
+  snapshot_path: ../artifacts/paired_states_killtest40_targeted/logit_head.pt
+
+evaluation:
+  max_eval_batches: 50
+  continuation_steps: 16

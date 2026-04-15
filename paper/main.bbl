@@ -1,0 +1,23 @@
+\begin{thebibliography}{1}
+
+\bibitem{helmasLegacy2026}
+{Archived repository documentation}.
+\newblock He-lmas: Heterogeneous latent manifold alignment system.
+\newblock \url{../archive/legacy-he-lmas/README.md}, 2026.
+\newblock Legacy cross-model KV bridge project preserved as archived repository
+  history.
+
+\bibitem{gemma3n2025}
+{Google AI for Developers}.
+\newblock Gemma 3n overview.
+\newblock \url{https://ai.google.dev/gemma/docs/gemma-3n}, 2025.
+\newblock Developer documentation for Gemma 3n and its nested / selective
+  activation design.
+
+\bibitem{mrl2022}
+Aditya Kusupati et~al.
+\newblock Matryoshka representation learning.
+\newblock arXiv:2205.13147, 2022.
+\newblock Nested representation learning as a related idea for submodel reuse.
+
+\end{thebibliography}

@@ -1,0 +1,12 @@
+{
+  "best_val_mse": Infinity,
+  "final_val_mse": 16.866557439168293,
+  "final_val_cosine": 0.831240693728129,
+  "history": [],
+  "dataset_info": {
+    "hidden_dim": 2048,
+    "num_layers": 35,
+    "num_samples": 1440,
+    "target": "residual"
+  }
+}

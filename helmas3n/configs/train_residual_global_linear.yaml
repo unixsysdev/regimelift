@@ -1,0 +1,36 @@
+seed: 7
+
+experiment:
+  name: residual_global_linear
+  out_dir: artifacts/checkpoints/residual_global_linear
+
+data:
+  root_dir: artifacts/paired_states
+  target: residual
+  batch_size: 64
+  num_workers: 0
+
+model:
+  kind: global_linear
+
+optimizer:
+  lr: 0.0003
+  weight_decay: 0.0
+
+training:
+  epochs: 5
+  grad_clip: 1.0
+  eval_every_steps: 200
+
+loss:
+  mse_weight: 1.0
+  cosine_weight: 0.2
+  logit_weight: 0.0
+
+logit_head:
+  enabled: false
+  snapshot_path: artifacts/paired_states/logit_head.pt
+
+evaluation:
+  max_eval_batches: 50
+  continuation_steps: 16

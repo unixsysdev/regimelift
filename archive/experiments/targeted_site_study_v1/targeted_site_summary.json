@@ -1,0 +1,19 @@
+{
+  "pilot_extract_config": "/home/marcel/Work/He-LMAS/helmas3n/configs/extract_killtest40.yaml",
+  "heldout_extract_config": "/home/marcel/Work/He-LMAS/helmas3n/configs/extract_killtest40_holdout10.yaml",
+  "paired_root": "/home/marcel/Work/He-LMAS/helmas3n/artifacts/paired_states_killtest40",
+  "broad_checkpoint": "/home/marcel/Work/He-LMAS/helmas3n/artifacts/reports/killtest_v3/checkpoints/mlp/last.pt",
+  "layer16_checkpoint": "/home/marcel/Work/He-LMAS/helmas3n/artifacts/reports/targeted_runs/checkpoints/layer16_last1/last.pt",
+  "layer34_checkpoint": "/home/marcel/Work/He-LMAS/helmas3n/artifacts/reports/targeted_runs/checkpoints/layer34_last1/last.pt",
+  "horizons": [
+    1,
+    4,
+    8,
+    16
+  ],
+  "num_rows": 28,
+  "split_row_counts": {
+    "pilot": 14,
+    "heldout": 14
+  }
+}

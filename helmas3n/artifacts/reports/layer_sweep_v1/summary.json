@@ -1,0 +1,16 @@
+{
+  "out_dir": "/home/marcel/Work/He-LMAS/helmas3n/artifacts/reports/layer_sweep_v1",
+  "num_rows": 34,
+  "horizons": [
+    1,
+    4,
+    8,
+    16
+  ],
+  "baseline_low_to_full_no_patch": {
+    "h1": 0.0,
+    "h4": 0.01875,
+    "h8": 0.021875,
+    "h16": 0.0171875
+  }
+}

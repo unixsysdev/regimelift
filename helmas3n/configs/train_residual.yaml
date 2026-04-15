@@ -1,0 +1,41 @@
+seed: 7
+
+experiment:
+  name: residual_uplift_mlp
+  out_dir: artifacts/checkpoints/residual_uplift_mlp
+
+data:
+  root_dir: artifacts/paired_states
+  target: residual
+  batch_size: 64
+  num_workers: 0
+
+model:
+  kind: mlp  # identity | mean_delta | global_linear | linear | lowrank | mlp | flow
+  rank: 64
+  mlp_expansion: 2.0
+  mlp_shared: false
+  freeze_mean_delta: true
+
+optimizer:
+  lr: 0.0003
+  weight_decay: 0.0
+
+training:
+  epochs: 5
+  grad_clip: 1.0
+  eval_every_steps: 200
+
+loss:
+  mse_weight: 1.0
+  cosine_weight: 0.2
+  logit_weight: 0.3
+  logit_only_final_layer: true
+
+logit_head:
+  enabled: true
+  snapshot_path: artifacts/paired_states/logit_head.pt
+
+evaluation:
+  max_eval_batches: 50
+  continuation_steps: 16

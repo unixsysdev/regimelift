@@ -1,0 +1,12 @@
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local tooling / workspace noise
+.serena/
+chatgpt-web/
+chatgpt-web-instant/
+timm/
+torchvision/
+helmas3n/helmas3n/

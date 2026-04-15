@@ -1,0 +1,36 @@
+seed: 7
+
+experiment:
+  name: residual_flow_refine
+  out_dir: artifacts/checkpoints/residual_flow_refine
+
+data:
+  root_dir: artifacts/paired_states
+  target: residual
+  batch_size: 64
+  num_workers: 0
+
+model:
+  kind: flow
+  flow_hidden_dim: 1024
+
+optimizer:
+  lr: 0.0001
+  weight_decay: 0.0
+
+training:
+  epochs: 3
+  grad_clip: 1.0
+  eval_every_steps: 200
+
+loss:
+  mse_weight: 1.0
+  cosine_weight: 0.2
+  logit_weight: 0.1
+
+logit_head:
+  enabled: true
+  snapshot_path: artifacts/paired_states/logit_head.pt
+
+notes:
+  warning: "Flow is refinement-only. Run after linear/lowrank/mlp baselines are established."

@@ -1,0 +1,27 @@
+{
+  "format": "paired_states_subset",
+  "num_samples": 12800,
+  "shards": [
+    {
+      "path": "shard_00000.pt",
+      "num_samples": 12800
+    }
+  ],
+  "capture_kv": true,
+  "capture_logits": true,
+  "logits_topk": 128,
+  "num_layers": 35,
+  "hidden_dim": 2048,
+  "num_heads": 2,
+  "head_dim": 256,
+  "model_name": "google/gemma-3n-e4b",
+  "selection": {
+    "target_layer": 16,
+    "position_mode": "last1",
+    "unique_samples": 40,
+    "repeat_to_match_source": true,
+    "repeat_factor": 320,
+    "source_root": "/home/marcel/Work/He-LMAS/helmas3n/artifacts/paired_states_killtest40_targeted",
+    "source_num_samples": 12800
+  }
+}

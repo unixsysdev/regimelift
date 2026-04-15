@@ -1,0 +1,30 @@
+{
+  "format": "helmas3n.paired.v1",
+  "num_samples": 12800,
+  "shards": [
+    {
+      "path": "shard_00000.pt",
+      "num_samples": 4096
+    },
+    {
+      "path": "shard_00001.pt",
+      "num_samples": 4096
+    },
+    {
+      "path": "shard_00002.pt",
+      "num_samples": 4096
+    },
+    {
+      "path": "shard_00003.pt",
+      "num_samples": 512
+    }
+  ],
+  "capture_kv": true,
+  "capture_logits": true,
+  "logits_topk": 128,
+  "num_layers": 35,
+  "hidden_dim": 2048,
+  "num_heads": 2,
+  "head_dim": 256,
+  "model_name": "google/gemma-3n-e4b"
+}

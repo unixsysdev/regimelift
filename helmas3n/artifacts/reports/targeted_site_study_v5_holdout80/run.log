@@ -1,0 +1,119 @@
+{
+  "split": "heldout",
+  "resolved_extract_config": "/home/marcel/Work/He-LMAS/helmas3n/configs/extract_killtest40_holdout80.yaml",
+  "resolved_prompts_path": "/home/marcel/Work/He-LMAS/data/prompt_pool_v1_holdout80.jsonl",
+  "loaded_prompt_count": 80,
+  "first_prompt_id": "sym_0253",
+  "last_prompt_id": "con_0079"
+}
+Fetching 4 files:   0%|          | 0/4 [00:00<?, ?it/s]Fetching 4 files: 100%|██████████| 4/4 [00:00<00:00, 9000.65it/s]
+Loading weights:   0%|          | 0/851 [00:00<?, ?it/s]Loading weights: 100%|██████████| 851/851 [00:00<00:00, 20695.38it/s]
+[1mGemma3nForCausalLM LOAD REPORT[0m from: google/gemma-3n-e4b
+Key                                                                                             | Status     |  | 
+------------------------------------------------------------------------------------------------+------------+--+-
+model.vision_tower.timm_model.blocks.{1, 2, 3}.{0...38}.pw_exp.bn.weight                        | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.attention.attn.relative_position_embedding.pos_proj.weight | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.2.{9...35}.attn.value.norm.weight                          | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.{1, 2, 3}.{0...38}.pw_exp.conv.weight                      | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.{2, 3}.{1...37}.attn.output.proj.weight                    | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.{2, 3}.{1...37}.attn.key.proj.weight                       | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.2.{9...35}.attn.key.down_conv.weight                       | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.attention.pre_attn_norm.weight                             | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.attention.attn.k_proj.weight                               | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.{2, 3}.{1...37}.norm.weight                                | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.{1, 2, 3}.{0...38}.pw_proj.bn.weight                       | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.attention.attn.per_dim_scale                               | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.lconv1d.conv_norm.weight                                   | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.lconv1d.linear_end.weight                                  | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.{1, 2, 3}.{0, 1, 2, 3, 4, 5, 6, 7}.dw_start.bn.weight      | UNEXPECTED |  | 
+model.audio_tower.subsample_conv_projection.conv_0.norm.weight                                  | UNEXPECTED |  | 
+model.vision_tower.timm_model.conv_stem.conv.weight                                             | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.ffw_layer_start.pre_layer_norm.weight                      | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.{2, 3}.{1...37}.attn.query.proj.weight                     | UNEXPECTED |  | 
+model.vision_tower.timm_model.conv_stem.conv.bias                                               | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.0.{0, 1, 2}.conv_pwl.weight                                | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.ffw_layer_end.ffw_layer_2.weight                           | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.lconv1d.linear_start.weight                                | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.{2, 3}.{1...37}.attn.value.proj.weight                     | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.ffw_layer_end.pre_layer_norm.weight                        | UNEXPECTED |  | 
+model.vision_tower.timm_model.msfa.ffn.pw_proj.conv.weight                                      | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.{1, 2, 3}.{0...38}.layer_scale.gamma                       | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.ffw_layer_end.post_layer_norm.weight                       | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.{1, 2, 3}.{0, 1, 2, 3, 4, 5, 6, 7}.dw_start.conv.weight    | UNEXPECTED |  | 
+model.vision_tower.timm_model.msfa.ffn.pw_exp.bn.weight                                         | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.ffw_layer_start.ffw_layer_1.weight                         | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.2.{9...35}.attn.value.down_conv.weight                     | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.attention.attn.q_proj.weight                               | UNEXPECTED |  | 
+model.embed_audio.embedding_projection.weight                                                   | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.{1, 2, 3}.{0...38}.pw_proj.conv.weight                     | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.lconv1d.depthwise_conv1d.weight                            | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.lconv1d.pre_layer_norm.weight                              | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.ffw_layer_start.post_layer_norm.weight                     | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.norm.weight                                                | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.ffw_layer_start.ffw_layer_2.weight                         | UNEXPECTED |  | 
+model.vision_tower.timm_model.msfa.norm.weight                                                  | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.{1, 2, 3}.0.dw_mid.conv.weight                             | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.2.{9...35}.attn.key.norm.weight                            | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.attention.attn.v_proj.weight                               | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.attention.post_norm.weight                                 | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.0.{0, 1, 2}.conv_exp.weight                                | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.attention.post.weight                                      | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.{1, 2, 3}.0.dw_mid.bn.weight                               | UNEXPECTED |  | 
+model.audio_tower.conformer.{0...11}.ffw_layer_end.ffw_layer_1.weight                           | UNEXPECTED |  | 
+model.embed_audio.embedding.weight                                                              | UNEXPECTED |  | 
+model.vision_tower.timm_model.msfa.ffn.pw_exp.conv.weight                                       | UNEXPECTED |  | 
+model.embed_vision.embedding.weight                                                             | UNEXPECTED |  | 
+model.audio_tower.subsample_conv_projection.conv_0.conv.weight                                  | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.0.{0, 1, 2}.bn2.weight                                     | UNEXPECTED |  | 
+model.vision_tower.timm_model.blocks.0.{0, 1, 2}.bn1.weight                                     | UNEXPECTED |  | 
+model.embed_vision.soft_embedding_norm.weight                                                   | UNEXPECTED |  | 
+model.audio_tower.subsample_conv_projection.conv_1.conv.weight                                  | UNEXPECTED |  | 
+model.embed_vision.hard_embedding_norm.weight                                                   | UNEXPECTED |  | 
+model.embed_audio.soft_embedding_norm.weight                                                    | UNEXPECTED |  | 
+model.vision_tower.timm_model.msfa.ffn.pw_proj.bn.weight                                        | UNEXPECTED |  | 
+model.audio_tower.subsample_conv_projection.input_proj_linear.weight                            | UNEXPECTED |  | 
+model.vision_tower.timm_model.conv_stem.bn.weight                                               | UNEXPECTED |  | 
+model.embed_audio.hard_embedding_norm.weight                                                    | UNEXPECTED |  | 
+model.embed_vision.embedding_projection.weight                                                  | UNEXPECTED |  | 
+model.audio_tower.subsample_conv_projection.conv_1.norm.weight                                  | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+{
+  "resolved_pilot_extract_config": "/home/marcel/Work/He-LMAS/helmas3n/configs/extract_killtest40.yaml",
+  "resolved_heldout_extract_config": "/home/marcel/Work/He-LMAS/helmas3n/configs/extract_killtest40_holdout80.yaml",
+  "resolved_pilot_prompts_path": null,
+  "resolved_heldout_prompts_path": "/home/marcel/Work/He-LMAS/data/prompt_pool_v1_holdout80.jsonl",
+  "resolved_train_template": "/home/marcel/Work/He-LMAS/helmas3n/configs/train_residual.yaml",
+  "resolved_paired_root": "/home/marcel/Work/He-LMAS/helmas3n/artifacts/paired_states_killtest40",
+  "resolved_out_dir": "/home/marcel/Work/He-LMAS/helmas3n/artifacts/reports/targeted_site_study_v5_holdout80",
+  "broad_checkpoint": "/home/marcel/Work/He-LMAS/helmas3n/artifacts/reports/killtest_v3/checkpoints/mlp/last.pt",
+  "layer16_checkpoint": "/home/marcel/Work/He-LMAS/helmas3n/artifacts/reports/targeted_runs/checkpoints/layer16_last1/last.pt",
+  "layer34_checkpoint": "/home/marcel/Work/He-LMAS/helmas3n/artifacts/reports/targeted_runs/checkpoints/layer34_last1/last.pt",
+  "heldout_prompt_count": 80,
+  "heldout_prompt_id_first": "sym_0253",
+  "heldout_prompt_id_last": "con_0079",
+  "heldout_only": true,
+  "horizons": [
+    1,
+    4,
+    8,
+    16
+  ],
+  "hidden_dim": 2048,
+  "num_layers": 35
+}
+[targeted] split=heldout prompts=80
+[layer-sweep] caching prompt 1/80
+/home/marcel/.local/lib/python3.14/site-packages/transformers/integrations/sdpa_attention.py:92: UserWarning: Flash Efficient attention on Current AMD GPU is still experimental. Enable it with TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1. (Triggered internally at /pytorch/aten/src/ATen/native/transformers/hip/sdp_utils.cpp:320.)
+  attn_output = torch.nn.functional.scaled_dot_product_attention(
+/home/marcel/.local/lib/python3.14/site-packages/transformers/integrations/sdpa_attention.py:92: UserWarning: Mem Efficient attention on Current AMD GPU is still experimental. Enable it with TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1. (Triggered internally at /pytorch/aten/src/ATen/native/transformers/hip/sdp_utils.cpp:377.)
+  attn_output = torch.nn.functional.scaled_dot_product_attention(
+[layer-sweep] caching prompt 10/80
+[layer-sweep] caching prompt 20/80
+[layer-sweep] caching prompt 30/80
+[layer-sweep] caching prompt 40/80
+[layer-sweep] caching prompt 50/80
+[layer-sweep] caching prompt 60/80
+[layer-sweep] caching prompt 70/80
+[layer-sweep] caching prompt 80/80

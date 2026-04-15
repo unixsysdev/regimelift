@@ -1,0 +1,42 @@
+[
+  {
+    "method": "identity",
+    "state_cosine": 0.5042705208063125,
+    "state_mse": 49.982744216918945,
+    "next_token_kl_uplift_vs_full": null,
+    "next_token_top1_uplift_vs_full": 0.0,
+    "cont8_uplift_vs_full": 0.0,
+    "cont8_low_vs_full": 0.0625,
+    "delta": -0.0625
+  },
+  {
+    "method": "mean_delta",
+    "state_cosine": 0.8476330280303955,
+    "state_mse": 15.74589900970459,
+    "next_token_kl_uplift_vs_full": null,
+    "next_token_top1_uplift_vs_full": 0.0,
+    "cont8_uplift_vs_full": 0.0,
+    "cont8_low_vs_full": 0.0625,
+    "delta": -0.0625
+  },
+  {
+    "method": "global_linear",
+    "state_cosine": 0.8984764218330383,
+    "state_mse": 9.392950582504273,
+    "next_token_kl_uplift_vs_full": null,
+    "next_token_top1_uplift_vs_full": 0.0,
+    "cont8_uplift_vs_full": 0.0,
+    "cont8_low_vs_full": 0.0625,
+    "delta": -0.0625
+  },
+  {
+    "method": "mlp",
+    "state_cosine": 0.9405596673488616,
+    "state_mse": 5.533362793922424,
+    "next_token_kl_uplift_vs_full": 15.411828231811523,
+    "next_token_top1_uplift_vs_full": 0.009375,
+    "cont8_uplift_vs_full": 0.0625,
+    "cont8_low_vs_full": 0.0625,
+    "delta": 0.0
+  }
+]

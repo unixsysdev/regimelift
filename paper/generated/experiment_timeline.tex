@@ -1,0 +1,13 @@
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.18\textwidth}X>{\raggedright\arraybackslash}p{0.26\textwidth}}
+\toprule
+Phase & What was tested & Outcome \\
+\midrule
+0 & Low/full separation sanity check & Passed: the two regimes are meaningfully different. \\
+1 & Extractor validation on structured prompts & Passed: paired residuals, caches, and logits line up. \\
+2 & Null controls plus broad baseline table & Passed: identity equals no-patch; broad MLP is not enough. \\
+3 & Layer sweep over candidate sites & Passed: layer 34 is the strongest learned site. \\
+4 & Suffix-span sweep at the selected sites & Passed: last1 is already the informative span. \\
+5 & Targeted study with held-out prompts & Passed: layer34,last1 generalizes; oracle is reference. \\
+6 & Held-out80 rerun with fail-fast checks & Running: wrong prompt counts now abort immediately. \\
+\bottomrule
+\end{tabularx}

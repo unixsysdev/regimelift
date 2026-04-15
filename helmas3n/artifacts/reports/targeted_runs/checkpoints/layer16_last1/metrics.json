@@ -1,0 +1,31 @@
+{
+  "best_val_mse": 0.027093962859362365,
+  "final_val_mse": 0.018466491997241975,
+  "final_val_cosine": 0.9992335736751556,
+  "history": [
+    {
+      "step": 200,
+      "epoch": 1,
+      "loss_total": 0.04503817483782768,
+      "loss_state_mse": 0.04466712474822998,
+      "loss_state_cos": 0.0018552541732788086,
+      "val_mse": 0.04586257990449667,
+      "val_cosine": 0.9981104552745819
+    },
+    {
+      "step": 400,
+      "epoch": 2,
+      "loss_total": 0.02520165778696537,
+      "loss_state_mse": 0.024998238310217857,
+      "loss_state_cos": 0.0010170936584472656,
+      "val_mse": 0.027093962859362365,
+      "val_cosine": 0.9988808810710907
+    }
+  ],
+  "dataset_info": {
+    "hidden_dim": 2048,
+    "num_layers": 35,
+    "num_samples": 12800,
+    "target": "residual"
+  }
+}
