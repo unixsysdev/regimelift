@@ -36,7 +36,7 @@
 \maketitle
 
 \begin{abstract}
-This paper studies state uplift across nested operating regimes in Gemma 3n. Gemma 3n is distributed as separate E2B and E4B artifacts, but its MatFormer-style design makes the reduced E2B-like regime part of the same parent family rather than an unrelated checkpoint. That architectural fact motivates a narrower and more testable question than heterogeneous model bridging: can internal state from the reduced operating regime be corrected just enough for decoding to resume under the fuller regime with improved behavioral fidelity? We investigate this question using paired low/full runs on identical prompt prefixes, residual-state translators with null controls, live handoff metrics at horizons 1/4/8/16, and a sequence of kill-tests that isolate where intervention actually matters. The main empirical result is that broad residual training is insufficient, while a targeted residual uplift at \method{layer34,last1} produces strong continuation recovery and generalizes to a held-out slice. The resulting picture is clear: the dominant bottleneck is intervention placement and regime-specific control, not generic state-fitting capacity.
+This paper studies state uplift across nested operating regimes in Gemma 3n. Gemma 3n is distributed as separate E2B and E4B artifacts, but its MatFormer-style design makes the reduced E2B-like regime part of the same parent family rather than an unrelated checkpoint. That architectural fact motivates a narrower and more testable question than heterogeneous model bridging: can internal state from the reduced operating regime be corrected just enough for decoding to resume under the fuller regime with improved behavioral fidelity? We investigate this question using paired low/full runs on identical prompt prefixes, residual-state translators with null controls, live handoff metrics at horizons 1/4/8/16, and a sequence of kill-tests that isolate where intervention actually matters. The main empirical result is that broad residual training is insufficient, while a targeted residual uplift at \method{layer34,last1} produces strong continuation recovery on a heldout80 split. The resulting picture is clear: the dominant bottleneck is intervention placement and regime-specific control, not generic state-fitting capacity.
 \end{abstract}
 
 \section{Introduction}
@@ -95,7 +95,7 @@ That narrower framing is a strength. It allows the experiments to distinguish th
     \item the regimes are separated, but only local fit is learnable;
     \item the regimes are separated and a learned intervention can actually recover behavior.
 \end{enumerate}
-The completed results place RegimeLift in the third case, but only at a specific intervention site.
+The completed results are most consistent with the third case, but only at a specific intervention site.
 
 \section{Problem formulation}
 Let $r \in \{\low,\full\}$ denote the reduced and fuller regimes. For prompt prefix $x_{1:T}$, layer $\ell$, and token position $t$, define the residual-stream state
@@ -165,6 +165,8 @@ The current paper does not treat the two operating regimes as vague labels. They
     \label{tab:regimecontrols}
 \end{table}
 
+Operationally, these controls do the following in our runner. \texttt{activation\_sparsity} sets the fraction of FFN channels disabled per layer, so higher values produce a narrower active path. \texttt{KV shared layers} enables cache-sharing behavior in later blocks of the reduced regime, which changes the attention-state object that must be handed off. \texttt{scale correction} toggles a regime-specific normalization correction used by the text path in this implementation. \texttt{active index} selects the active stream when Gemma emits multiple stream slots; we keep it fixed at index 0 for all runs in this paper.
+
 \subsection{Model families and controls}
 The completed experiments cover:
 \begin{itemize}[leftmargin=1.4em]
@@ -175,6 +177,13 @@ The completed experiments cover:
 \end{itemize}
 
 The strictest control is \method{identity}. If identity differs from the proper no-patch path, the evaluator is invalid. That check now passes exactly.
+
+\subsection{Live handoff implementation}
+Live evaluation uses a fixed patch procedure. For each prompt prefix, we run a low-regime prefill and extract the residual state at the intervention site. The learned model predicts a replacement state for that site, and a forward hook patches the selected decoder layer output during prefill.
+
+In the main result configuration, the patch is rank-1 in sequence dimension (``last1''): only the final prefix token at the chosen layer is overwritten. For \method{layer34,last1}, the patch tensor is applied to layer 34, token position $t=T$, after the layer output is produced and before final-logit projection.
+
+After patched prefill, decoding resumes under the full regime using the resulting cache; continuation metrics compare this path against native full-regime continuation on the same prompt. Identity control uses the same code path but patches with the low state itself, which is why identity must match no-patch exactly.
 
 \subsection{Prompt families and split protocol}
 The current evidence is built on synthetic but structured prompt families rather than unconstrained open-ended traces. The prompt pools include arithmetic, symbolic, logical, sequential, and constrained-completion templates. This was a deliberate design choice: the first job of the project was to establish whether the handoff premise is even falsifiable under cleanly paired conditions.
@@ -273,7 +282,7 @@ The strongest completed result is the targeted site study summarized in Table~\r
 \begin{table}[H]
     \centering
     \small
-    \caption{Continuation match versus full-regime decoding for the completed targeted-site study.}
+    \caption{Heldout80 continuation match versus full-regime decoding for the completed targeted-site study. The split contains 80 prompts: arithmetic (21), logic (19), symbolic (17), sequence (12), and constrained generation (11).}
     \resizebox{\linewidth}{!}{\input{generated/core_results_table.tex}}
     \label{tab:core}
 \end{table}
@@ -285,7 +294,14 @@ The strongest completed result is the targeted site study summarized in Table~\r
     \label{fig:targeted-curves}
 \end{figure}
 
-The most important row in Table~\ref{tab:core} is \method{Targeted MLP @ layer34}. On the completed heldout80 split it achieves Match@1 of 0.775, Match@4 of 0.203, Match@8 of 0.116, and Match@16 of 0.064. No other learned row comes close. This is the first point in the project where a learned intervention does what the project is supposed to do: materially recover continuation behavior on held-out prompts.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figures/targeted_delta_summary.pdf}
+    \caption{Heldout80 absolute gains over no-patch at horizons 8 and 16. The dominant learned gain comes from the targeted \method{layer34,last1} model; broad training and the failed \method{layer16,last1} target do not recover comparable behavior.}
+    \label{fig:targeted-delta}
+\end{figure}
+
+The most important row in Table~\ref{tab:core} is \method{Targeted MLP @ layer34}. On the completed heldout80 split it achieves Match@1 of 0.775, Match@4 of 0.203, Match@8 of 0.116, and Match@16 of 0.064. No other learned row comes close. Importantly, \method{layer16,last1} looked plausible in pilot sweeps and then failed under stronger validation, which is exactly why targeted-site validation was necessary. This is the first point in the project where a learned intervention does what the project is supposed to do: materially recover continuation behavior on held-out prompts.
 
 \subsection{Layer sensitivity}
 The corrected layer sweep showed that continuation recovery is controlled by a narrow intervention surface. Earlier pilot impressions suggested \method{layer16} might be the right target. The controlled sweep falsified that as a stable main site and instead showed that the strongest useful region lies substantially later in the stack.
@@ -338,6 +354,11 @@ The negative result is equally important. \method{layer16,last1} looked plausibl
 \subsection{Why the reference patch is not a ceiling}
 At some horizons the learned row exceeds the same-site exact-substitution reference. That means raw state fidelity is not identical to optimal rollout behavior. The sensible interpretation is that the reference patch is a control surface, not a mathematical upper bound for continuation match. This paper therefore uses the term \emph{reference patch} consistently instead of \emph{oracle ceiling}.
 
+\subsection{Inference relevance}
+The intended systems use-case is small-first decoding with selective escalation: run the reduced regime when possible, then hand off to fuller activation when continuation quality requires it. This paper establishes the handoff feasibility component, not a full serving policy.
+
+Cost accounting is therefore preliminary. In the current instrumentation-heavy sanity runs, low-regime latency and memory were not consistently lower than full regime (mean deltas were small and noisy). That means this paper should not be read as a throughput claim yet; it is a behavioral handoff claim. A production-relevant study still needs trigger policy design, cache-transfer overhead accounting, and clean end-to-end latency measurements under fixed hardware kernels.
+
 \subsection{Limitations}
 An earlier held-out validation accidentally used only 10 prompts. The evaluator was therefore hardened to fail fast on prompt-count mismatch and to write incremental artifacts, and the completed heldout80 rerun is now the canonical larger-sample result.
 
@@ -351,18 +372,19 @@ Three threats matter most at this stage.
     \item \textbf{Objective mismatch.} The project already has evidence that excellent local residual fit does not guarantee good continuation recovery. This means future objective changes must be judged behaviorally, not cosmetically.
 \end{itemize}
 
-\section{Reproducibility and run record}
-This repository keeps the paper tied to concrete experiment artifacts. The current run record is summarized by the excerpt below.
+\subsection{Next experimental priority}
+The next high-value experiment keeps the intervention fixed at \method{layer34,last1} and ablates training objectives (state-only, state+logit, heavier logit weighting, and short-horizon continuation-aware terms). This directly tests the current bottleneck: objective mismatch between local fit and rollout behavior.
 
-\begin{table}[H]
-    \centering
-    \small
-    \begin{minipage}{0.95\linewidth}
-        \input{generated/log_excerpt.tex}
-    \end{minipage}
-    \caption{Excerpt from the completed heldout80 validation record. The purpose of this excerpt is to document that the larger held-out rerun used the intended prompt pool and validation gate.}
-    \label{tab:logexcerpt}
-\end{table}
+In parallel, the main generalization question is intermediate-regime transfer inside the same parent family (minimum $\rightarrow$ intermediate, intermediate $\rightarrow$ full). That experiment determines whether \method{layer34,last1} is a one-pair result or a broader regime-lift property.
+
+\section{Reproducibility and run record}
+This repository keeps the paper tied to concrete experiment artifacts. Reproducibility rests on three pieces:
+\begin{itemize}[leftmargin=1.4em]
+    \item fixed prompt pools with explicit split files;
+    \item explicit run manifests with resolved config paths and prompt counts;
+    \item incremental row-level result dumps for interrupted-run recovery.
+\end{itemize}
+The full heldout80 manifest excerpt is provided in Appendix~\ref{app:runlog}.
 
 \section{Conclusion}
 RegimeLift now has a stable empirical spine. The project no longer rests on the vague claim that ``state translation might work.'' It now supports a sharper statement:
@@ -370,9 +392,21 @@ RegimeLift now has a stable empirical spine. The project no longer rests on the 
 Within Gemma 3n's nested E2B/E4B family, low-to-full regime uplift is behaviorally recoverable at a specific learned handoff site, and broad residual fitting alone is not enough to find that site.
 \end{quote}
 
-That is the main result of the current paper. The next step is not to widen the architecture search blindly. It is to stress-test the already-identified site on broader held-out diversity and then decide whether objective refinement, multi-site learning, or KV-level targets are justified.
+That is the main result of the current paper. The next step is not to widen the architecture search blindly. It is to run fixed-site objective ablations at \method{layer34,last1} and then test intermediate-regime generalization within the same Gemma 3n family before expanding to KV-level or flow-based methods.
 
 \bibliographystyle{plain}
 \bibliography{references}
+
+\appendix
+\section{Heldout80 Run Manifest Excerpt}
+\label{app:runlog}
+\begin{table}[H]
+    \centering
+    \small
+    \begin{minipage}{0.95\linewidth}
+        \input{generated/log_excerpt.tex}
+    \end{minipage}
+    \caption{Manifest excerpt for the completed heldout80 validation run.}
+\end{table}
 
 \end{document}

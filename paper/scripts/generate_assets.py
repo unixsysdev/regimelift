@@ -198,6 +198,41 @@ def plot_targeted_curves(rows: list[dict[str, str]]) -> None:
     plt.close(fig)
 
 
+def plot_targeted_delta_bars(rows: list[dict[str, str]]) -> None:
+    method_rows = [
+        ("broad_mlp", "layer34", "Broad MLP", "#1f77b4"),
+        ("targeted_mlp", "layer16", "Targeted layer16", "#ff7f0e"),
+        ("targeted_mlp", "layer34", "Targeted layer34", "#2ca02c"),
+        ("oracle_layer34", "layer34", "Reference layer34", "#d62728"),
+        ("oracle_stride", "layer34", "Reference stride", "#9467bd"),
+    ]
+    labels = []
+    h8_vals = []
+    h16_vals = []
+    for method, site, label, _ in method_rows:
+        row = lookup_targeted(rows, "heldout", method, site)
+        labels.append(label)
+        h8_vals.append(float(row["delta_h8"]))
+        h16_vals.append(float(row["delta_h16"]))
+
+    x = list(range(len(labels)))
+    width = 0.36
+    fig, ax = plt.subplots(1, 1, figsize=(9.2, 4.6))
+    ax.bar([i - width / 2 for i in x], h8_vals, width=width, label="Delta h8 vs no patch", color="#1f77b4")
+    ax.bar([i + width / 2 for i in x], h16_vals, width=width, label="Delta h16 vs no patch", color="#d62728")
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=15, ha="right")
+    ax.axhline(0.0, color="#444444", linewidth=1.0, alpha=0.8)
+    ax.set_ylabel("Absolute continuation gain")
+    ax.set_title("Heldout80 continuation gains relative to no patch")
+    ax.grid(True, axis="y", alpha=0.25)
+    ax.legend(loc="upper left", fontsize=8, frameon=False)
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "targeted_delta_summary.png", dpi=220, bbox_inches="tight")
+    fig.savefig(FIG_DIR / "targeted_delta_summary.pdf", bbox_inches="tight")
+    plt.close(fig)
+
+
 def plot_layer_sweep(rows: list[dict[str, str]]) -> None:
     rows = [r for r in rows if r.get("layer", "").strip()]
     layers = sorted({int(r["layer"]) for r in rows})
@@ -344,6 +379,7 @@ def main() -> None:
     write_log_excerpt()
 
     plot_targeted_curves(targeted_rows)
+    plot_targeted_delta_bars(targeted_rows)
     plot_layer_sweep(layer_rows)
     plot_suffix_span(suffix_rows)
     plot_regime_separation(sanity_layer_rows)
