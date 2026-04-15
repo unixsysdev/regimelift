@@ -331,7 +331,7 @@ def run_sanity(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run low/full regime sanity separation report for HeLMAS-3n")
+    parser = argparse.ArgumentParser(description="Run low/full regime sanity separation report for RegimeLift")
     parser.add_argument("--config", type=str, required=True)
     parser.add_argument("--out-dir", type=str, default="")
     parser.add_argument("--max-prompts", type=int, default=50)

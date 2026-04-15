@@ -132,7 +132,7 @@ def run_pilot(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run HeLMAS-3n residual pilot baseline suite")
+    parser = argparse.ArgumentParser(description="Run RegimeLift residual pilot baseline suite")
     parser.add_argument("--extract-config", type=str, default="configs/extract.yaml")
     parser.add_argument("--methods", type=str, nargs="*", default=DEFAULT_METHOD_CONFIGS)
     parser.add_argument("--out-dir", type=str, default="artifacts/reports/pilot_residual")

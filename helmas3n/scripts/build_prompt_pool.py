@@ -104,7 +104,7 @@ def build_pool(total: int, seed: int) -> list[dict[str, str]]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build a synthetic prompt pool for HeLMAS-3n kill-tests")
+    parser = argparse.ArgumentParser(description="Build a synthetic prompt pool for RegimeLift kill-tests")
     parser.add_argument("--out", type=str, required=True, help="Output .jsonl path")
     parser.add_argument("--total", type=int, default=300)
     parser.add_argument("--seed", type=int, default=13)

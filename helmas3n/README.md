@@ -1,15 +1,15 @@
-# HeLMAS-3n
+# RegimeLift Gemma 3n Track
 
 Nested-state uplift for Gemma 3n E4B.
 
 ## Thesis
 
-Gemma 3n is published as separate E2B and E4B artifacts, but we treat them here as nested operating regimes of one parent model family. HeLMAS-3n learns a minimal transport map that upgrades internal state from the reduced E2B-like regime inside Gemma 3n E4B into the corresponding fuller E4B regime, so decoding can resume closer to native full-regime behavior.
+Gemma 3n is published as separate E2B and E4B artifacts, but we treat them here as nested operating regimes of one parent model family. RegimeLift learns a minimal transport map that upgrades internal state from the reduced E2B-like regime inside Gemma 3n E4B into the corresponding fuller E4B regime, so decoding can resume closer to native full-regime behavior.
 
-This is intentionally different from original He-LMAS:
+This track is intentionally different from original He-LMAS:
 
 - Original He-LMAS: heterogeneous cross-model transfer.
-- HeLMAS-3n: same-parent-model regime-to-regime uplift.
+- RegimeLift: same-parent-model regime-to-regime uplift.
 
 ## Scope
 

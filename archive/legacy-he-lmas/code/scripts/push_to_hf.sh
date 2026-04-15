@@ -161,7 +161,7 @@ $(echo "$CHECKPOINT_INFO" | python -c "import sys,json; print(json.dumps(json.lo
   title={He-LMAS: Heterogeneous Latent Manifold Alignment System},
   author={datasysdev},
   year={2026},
-  url={https://github.com/unixsysdev/HeLMAS}
+  url={https://github.com/unixsysdev/regimelift}
 }
 \`\`\`
 

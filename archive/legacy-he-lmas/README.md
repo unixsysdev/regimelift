@@ -2,7 +2,7 @@
 
 > **Core Thesis**: The KV Cache is a fossilized record of causal history. We inject a tensor that *looks like* it was produced by the small model, but encodes the big model's intelligence.
 
-> **Archive status**: This is legacy/frozen material. Active development is in `helmas3n/`. Legacy code formerly at repository root now lives under `archive/legacy-he-lmas/code/`.
+> **Archive status**: This is legacy/frozen material inside the RegimeLift repository. Active development is in `helmas3n/`. Legacy code formerly at repository root now lives under `archive/legacy-he-lmas/code/`.
 
 ## Overview
 

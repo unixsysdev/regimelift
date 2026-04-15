@@ -1,1 +1,1 @@
-"""HeLMAS-3n source package."""
+"""RegimeLift source package."""

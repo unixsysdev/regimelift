@@ -13,7 +13,7 @@ from helmas3n.src.gemma.state_extract import collect_paired_states, load_extract
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Collect paired low/full regime states for HeLMAS-3n")
+    parser = argparse.ArgumentParser(description="Collect paired low/full regime states for RegimeLift")
     parser.add_argument("--config", type=str, required=True, help="Path to extraction YAML config")
     args = parser.parse_args()
 

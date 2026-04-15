@@ -28,7 +28,7 @@
 \newcommand{\full}{\mathrm{full}}
 \newcommand{\KL}{\mathrm{KL}}
 
-\title{HeLMAS-3n: Targeted Residual Uplift Across Nested Gemma 3n Operating Regimes}
+\title{RegimeLift: Targeted Residual Uplift Across Nested Gemma 3n Operating Regimes}
 \author{Marcel\\Independent Researcher}
 \date{\today}
 
@@ -40,7 +40,7 @@ This paper studies state uplift across nested operating regimes in Gemma 3n. Gem
 \end{abstract}
 
 \section{Introduction}
-The project in this repository began with a broader bridge hypothesis: can one transplant reasoning state across distinct language models? That hypothesis was too unconstrained. HeLMAS-3n narrows the problem to a setting where structural relatedness is real and measurable: regime handoff inside Gemma 3n's shared E2B/E4B family.
+The project in this repository began with a broader bridge hypothesis: can one transplant reasoning state across distinct language models? That hypothesis was too unconstrained. RegimeLift narrows the problem to a setting where structural relatedness is real and measurable: regime handoff inside Gemma 3n's shared E2B/E4B family.
 
 Gemma 3n is documented as a nested / selective-activation architecture in which reduced and fuller operating modes coexist inside one parent family \cite{gemma3n2025,mrl2022}. The E2B and E4B artifacts are published separately, but the scientific object of interest here is not transfer between unrelated checkpoints. It is uplift between two operating regimes that were trained as part of the same nested family. That difference matters. If the reduced regime is an embedded sibling of the fuller regime, then a useful handoff might require only a small corrective transport map rather than a universal latent bridge.
 
@@ -67,11 +67,11 @@ The current draft makes four contributions.
 \end{itemize}
 
 \section{Background and framing}
-\subsection{From archived He-LMAS to HeLMAS-3n}
-The archived He-LMAS project attempted heterogeneous cross-model transfer. That historical work remains useful as context, but it is not the active research track \cite{helmasLegacy2026}. HeLMAS-3n changes the problem class:
+\subsection{From archived He-LMAS to RegimeLift}
+The archived He-LMAS project attempted heterogeneous cross-model transfer. That historical work remains useful as context, but it is not the active research track \cite{helmasLegacy2026}. RegimeLift changes the problem class:
 \begin{itemize}[leftmargin=1.4em]
     \item Archived He-LMAS: transfer between different models.
-    \item HeLMAS-3n: uplift between nested operating regimes of the same parent family.
+    \item RegimeLift: uplift between nested operating regimes of the same parent family.
 \end{itemize}
 
 That reframing is not cosmetic. It replaces an ambitious but weakly constrained hypothesis with a narrower one whose failure modes can be isolated experimentally.
@@ -82,7 +82,20 @@ Gemma 3n is explicitly documented as a nested family with selective activation a
 the reduced path is different enough to create a real handoff problem, yet related enough that a small corrective map is plausible.
 \end{quote}
 
-That is the central scientific bet behind HeLMAS-3n.
+That is the central scientific bet behind RegimeLift.
+
+\section{Related work and positioning}
+RegimeLift sits between two literatures. The first is standard transformer language modeling \cite{vaswani2017attention}, which gives the baseline architecture and the residual-stream object we intervene on. The second is nested-representation or Matryoshka-style modeling \cite{mrl2022}, which makes same-family operating-mode comparisons scientifically plausible in the first place.
+
+What RegimeLift does \emph{not} claim is equally important. This is not a universal latent-alignment paper, not a cross-family checkpoint-bridging claim, and not evidence that one model's reasoning can always be transplanted into another. The archived He-LMAS line explored that broader space \cite{helmasLegacy2026}. The current work is intentionally narrower: one parent Gemma family, paired prefix states, and handoff quality measured by resumed decoding rather than geometric aesthetics.
+
+That narrower framing is a strength. It allows the experiments to distinguish three different possibilities:
+\begin{enumerate}[leftmargin=1.4em]
+    \item the regimes are too similar to justify the project;
+    \item the regimes are separated, but only local fit is learnable;
+    \item the regimes are separated and a learned intervention can actually recover behavior.
+\end{enumerate}
+The completed results place RegimeLift in the third case, but only at a specific intervention site.
 
 \section{Problem formulation}
 Let $r \in \{\low,\full\}$ denote the reduced and fuller regimes. For prompt prefix $x_{1:T}$, layer $\ell$, and token position $t$, define the residual-stream state
@@ -141,6 +154,17 @@ For each prompt prefix, the same parent Gemma 3n family is run under two operati
 
 The current paper focuses on residual uplift first. KV uplift remains a secondary object because direct cache prediction is more brittle and was not yet shown to improve the central behavioral metrics.
 
+\subsection{Regime construction}
+The current paper does not treat the two operating regimes as vague labels. They are instantiated by concrete activation and KV-sharing controls exposed through the Gemma runner. Table~\ref{tab:regimecontrols} summarizes the low/full settings used in the completed sanity and pilot runs.
+
+\begin{table}[H]
+    \centering
+    \small
+    \input{generated/regime_controls_table.tex}
+    \caption{Low/full regime controls used for the current RegimeLift study. These settings define the reduced E2B-like path and the fuller E4B path used throughout the paired-state pipeline.}
+    \label{tab:regimecontrols}
+\end{table}
+
 \subsection{Model families and controls}
 The completed experiments cover:
 \begin{itemize}[leftmargin=1.4em]
@@ -151,6 +175,17 @@ The completed experiments cover:
 \end{itemize}
 
 The strictest control is \method{identity}. If identity differs from the proper no-patch path, the evaluator is invalid. That check now passes exactly.
+
+\subsection{Prompt families and split protocol}
+The current evidence is built on synthetic but structured prompt families rather than unconstrained open-ended traces. The prompt pools include arithmetic, symbolic, logical, sequential, and constrained-completion templates. This was a deliberate design choice: the first job of the project was to establish whether the handoff premise is even falsifiable under cleanly paired conditions.
+
+The completed tables in this draft therefore combine:
+\begin{itemize}[leftmargin=1.4em]
+    \item a pilot split used for fast kill-tests and site sweeps;
+    \item a smaller held-out split used in the frozen targeted-site study;
+    \item an active larger held-out80 rerun used only as ongoing validation, not as a completed result in this manuscript.
+\end{itemize}
+The important discipline is that architectural changes are not justified until they survive the held-out handoff metric, not just the pilot tables.
 
 \subsection{Evaluation ladder}
 The evaluation hierarchy is intentionally brutal:
@@ -188,7 +223,7 @@ This sequence matters because it eliminates false-success paths. The project exp
         \draw[arrow] (pair) |- (oracle);
     \end{tikzpicture}
     }
-    \caption{Active HeLMAS-3n pipeline. The work progresses from paired extraction to residual uplift and then to live continuation handoff.}
+    \caption{Active RegimeLift pipeline. The work progresses from paired extraction to residual uplift and then to live continuation handoff.}
     \label{fig:pipeline}
 \end{figure}
 
@@ -206,6 +241,26 @@ The evidence in this paper is the output of a fixed sequence of kill-tests rathe
 The key transition in that sequence was from broad training to targeted intervention. Broad residual training improved local state metrics but did not recover behavior strongly enough. The subsequent layer and span sweeps isolated the intervention surface before targeted training was attempted.
 
 \section{Results}
+\subsection{Regime separation sanity}
+Before any uplift training, the project must establish that the reduced and fuller regimes are meaningfully different. Table~\ref{tab:separation} and Figure~\ref{fig:separation} summarize that first gate using the completed sanity report.
+
+\begin{table}[H]
+    \centering
+    \small
+    \input{generated/regime_separation_table.tex}
+    \caption{Global low/full separation metrics from the completed sanity report. These values establish that the handoff problem is real before any translator is trained.}
+    \label{tab:separation}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figures/regime_separation_profile.pdf}
+    \caption{Per-layer low/full separation profile. The mismatch is not uniform across the stack, which is one reason later intervention-site sweeps are necessary.}
+    \label{fig:separation}
+\end{figure}
+
+The important facts here are straightforward. The mean residual cosine is near 0.50 rather than near 1.0, the mean next-token KL is large, and top-1 agreement is low. This is enough to rule out the trivial failure mode in which low and full regimes are operationally identical under the current runner.
+
 \subsection{Core targeted-site result}
 The strongest completed result is the targeted site study summarized in Table~\ref{tab:core} and Figure~\ref{fig:targeted-curves}. The contrast is decisive:
 \begin{itemize}[leftmargin=1.4em]
@@ -288,6 +343,14 @@ The larger held-out80 rerun is still active. The earlier held-out validation acc
 
 The other limitation is scope. This paper establishes one strong residual handoff site first. It does not yet claim that the same uplift map works uniformly across intermediate Mix-n-Match regimes, nor that KV uplift is already competitive.
 
+\subsection{Threats to validity}
+Three threats matter most at this stage.
+\begin{itemize}[leftmargin=1.4em]
+    \item \textbf{Prompt diversity.} The completed held-out result is real, but still limited in breadth. The larger held-out80 rerun exists precisely because prompt-count mistakes can otherwise make a result look stronger than it is.
+    \item \textbf{Single-site intervention.} RegimeLift has established a first useful site, not a full theory of all intervention surfaces. Sparse multi-layer reference patches remain stronger than many single-site learned interventions.
+    \item \textbf{Objective mismatch.} The project already has evidence that excellent local residual fit does not guarantee good continuation recovery. This means future objective changes must be judged behaviorally, not cosmetically.
+\end{itemize}
+
 \section{Reproducibility and run record}
 This repository keeps the paper tied to concrete experiment artifacts. The current run record is summarized by the excerpt below.
 
@@ -302,7 +365,7 @@ This repository keeps the paper tied to concrete experiment artifacts. The curre
 \end{table}
 
 \section{Conclusion}
-HeLMAS-3n now has a stable empirical spine. The project no longer rests on the vague claim that ``state translation might work.'' It now supports a sharper statement:
+RegimeLift now has a stable empirical spine. The project no longer rests on the vague claim that ``state translation might work.'' It now supports a sharper statement:
 \begin{quote}
 Within Gemma 3n's nested E2B/E4B family, low-to-full regime uplift is behaviorally recoverable at a specific learned handoff site, and broad residual fitting alone is not enough to find that site.
 \end{quote}

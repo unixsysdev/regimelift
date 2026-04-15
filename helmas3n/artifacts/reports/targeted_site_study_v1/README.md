@@ -1,6 +1,6 @@
-# Targeted Site Study v1 (HeLMAS-3n)
+# Targeted Site Study v1 (RegimeLift)
 
-This is the canonical result set for the first completed HeLMAS-3n targeted site study.
+This is the canonical result set for the first completed RegimeLift targeted site study.
 
 ## Key takeaway
 
@@ -15,4 +15,4 @@ This is the canonical result set for the first completed HeLMAS-3n targeted site
 
 ## Note
 
-This directory is part of the active HeLMAS-3n evidence trail, not legacy archive material.
+This directory is part of the active RegimeLift evidence trail, not legacy archive material.

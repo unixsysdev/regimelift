@@ -1,1 +1,1 @@
-"""Tests for HeLMAS-3n."""
+"""Tests for RegimeLift."""

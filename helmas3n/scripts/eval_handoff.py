@@ -331,7 +331,7 @@ def evaluate_live_handoff(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate HeLMAS-3n uplift handoff metrics")
+    parser = argparse.ArgumentParser(description="Evaluate RegimeLift uplift handoff metrics")
     parser.add_argument("--config", type=str, required=True)
     parser.add_argument("--checkpoint", type=str, default="")
     parser.add_argument("--max-batches", type=int, default=100)

@@ -402,7 +402,7 @@ def _layer_residual_stats(cache: list[PromptCacheItem], layer: int) -> tuple[flo
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Live handoff layer sweep for HeLMAS-3n")
+    parser = argparse.ArgumentParser(description="Live handoff layer sweep for RegimeLift")
     parser.add_argument("--extract-config", type=str, default="configs/extract_killtest40.yaml")
     parser.add_argument("--train-template", type=str, default="configs/train_residual.yaml")
     parser.add_argument("--checkpoint-root", type=str, default="artifacts/reports/killtest_v3/checkpoints")

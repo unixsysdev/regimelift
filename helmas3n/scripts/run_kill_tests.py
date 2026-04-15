@@ -254,7 +254,7 @@ def _build_prompt_cache(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run HeLMAS-3n kill-test table with oracle row and horizon metrics")
+    parser = argparse.ArgumentParser(description="Run RegimeLift kill-test table with oracle row and horizon metrics")
     parser.add_argument("--extract-config", type=str, default="configs/extract_killtest.yaml")
     parser.add_argument("--train-template", type=str, default="configs/train_residual.yaml")
     parser.add_argument("--out-dir", type=str, default="artifacts/reports/killtest")

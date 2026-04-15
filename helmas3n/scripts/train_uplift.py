@@ -460,7 +460,7 @@ def train(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train HeLMAS-3n uplift baseline")
+    parser = argparse.ArgumentParser(description="Train RegimeLift uplift baseline")
     parser.add_argument("--config", type=str, required=True)
     args = parser.parse_args()
 

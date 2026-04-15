@@ -1,6 +1,6 @@
 # Targeted Site Study v1
 
-This folder is the HeLMAS-3n experiment-facing view of the first completed targeted site study.
+This folder is the RegimeLift experiment-facing view of the first completed targeted site study.
 
 ## Result
 
@@ -16,4 +16,4 @@ This folder is the HeLMAS-3n experiment-facing view of the first completed targe
 ## Runtime path note
 
 Active and future runs still write to `helmas3n/artifacts/reports/...`.
-This `experiments/` folder is a stable, reader-friendly experiment index.
+This `experiments/` folder is a stable, reader-friendly RegimeLift experiment index.

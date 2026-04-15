@@ -7,4 +7,4 @@ This directory contains the frozen legacy He-LMAS root code moved from repositor
 - `src/`
 - `tests/`
 
-Active development is in `/home/marcel/Work/He-LMAS/helmas3n`.
+Active development is in the RegimeLift Gemma 3n track under `/home/marcel/Work/He-LMAS/helmas3n`.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,8 @@ GEN_DIR = PAPER_ROOT / "generated"
 TARGETED_ROWS = REPO_ROOT / "helmas3n" / "artifacts" / "reports" / "targeted_site_study_v1" / "targeted_site_rows.csv"
 LAYER_SWEEP_ROWS = REPO_ROOT / "helmas3n" / "artifacts" / "reports" / "layer_sweep_v2_corrected" / "layer_sweep_rows.csv"
 SUFFIX_SPAN_ROWS = REPO_ROOT / "helmas3n" / "artifacts" / "reports" / "suffix_span_sweep_v1" / "suffix_span_summary.csv"
+SANITY_REPORT = REPO_ROOT / "helmas3n" / "artifacts" / "reports" / "killtest_v3" / "sanity" / "sanity_report.json"
+SANITY_LAYER_ROWS = REPO_ROOT / "helmas3n" / "artifacts" / "reports" / "killtest_v3" / "sanity" / "per_layer_metrics.csv"
 
 TARGETED_METHOD_ORDER = [
     ("low_to_full_no_patch", None, "No patch"),
@@ -122,6 +125,48 @@ def write_layer_sweep_summary_table(rows: list[dict[str, str]]) -> None:
     (GEN_DIR / "layer_sweep_summary_table.tex").write_text("\n".join(lines) + "\n")
 
 
+def write_regime_separation_table(report: dict[str, Any]) -> None:
+    global_metrics = report["global"]
+    lines: list[str] = []
+    lines.append(r"\begin{tabular}{lc}")
+    lines.append(r"\toprule")
+    lines.append(r"Metric & Value \\")
+    lines.append(r"\midrule")
+    rows = [
+        ("Prompt count", str(global_metrics["num_prompts"])),
+        ("Residual cosine mean", fmt(global_metrics["residual_cosine_mean"], 4)),
+        ("Residual MSE mean", fmt(global_metrics["residual_mse_mean"], 4)),
+        ("Next-token KL(full || low)", fmt(global_metrics["next_token_kl_full_to_low_mean"], 4)),
+        ("Next-token top-1 agreement", fmt(global_metrics["next_token_top1_agreement_mean"], 4)),
+    ]
+    for label, value in rows:
+        lines.append(f"{latex_escape(label)} & {latex_escape(value)} " + r"\\")
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+    (GEN_DIR / "regime_separation_table.tex").write_text("\n".join(lines) + "\n")
+
+
+def write_regime_controls_table(report: dict[str, Any]) -> None:
+    lines: list[str] = []
+    lines.append(r"\begin{tabular}{lcccc}")
+    lines.append(r"\toprule")
+    lines.append(r"Regime & Activation sparsity & KV shared layers & Scale correction & Active index \\")
+    lines.append(r"\midrule")
+    for regime_name in ["low", "full"]:
+        cfg = report["regimes"][regime_name]["text_overrides"]
+        lines.append(
+            f"{latex_escape(regime_name)} & "
+            f"{latex_escape(fmt(cfg['activation_sparsity_pattern'], 2))} & "
+            f"{latex_escape(str(cfg['num_kv_shared_layers']))} & "
+            f"{latex_escape(str(cfg['altup_correct_scale']))} & "
+            f"{latex_escape(str(cfg['altup_active_idx']))} "
+            + r"\\"
+        )
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+    (GEN_DIR / "regime_controls_table.tex").write_text("\n".join(lines) + "\n")
+
+
 def plot_targeted_curves(rows: list[dict[str, str]]) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.2), sharey=True)
     split_order = ["pilot", "heldout"]
@@ -146,7 +191,7 @@ def plot_targeted_curves(rows: list[dict[str, str]]) -> None:
 
     axes[0].set_ylabel("Continuation match vs full")
     axes[1].legend(loc="lower right", fontsize=8, frameon=False)
-    fig.suptitle("HeLMAS-3n targeted handoff recovery")
+    fig.suptitle("RegimeLift targeted handoff recovery")
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     fig.savefig(FIG_DIR / "targeted_handoff_curves.png", dpi=220, bbox_inches="tight")
     fig.savefig(FIG_DIR / "targeted_handoff_curves.pdf", bbox_inches="tight")
@@ -220,6 +265,32 @@ def plot_suffix_span(rows: list[dict[str, str]]) -> None:
     plt.close(fig)
 
 
+def plot_regime_separation(rows: list[dict[str, str]]) -> None:
+    layers = [int(r["layer"]) for r in rows]
+    cosines = [float(r["residual_cosine_mean"]) for r in rows]
+    mses = [float(r["residual_mse_mean"]) for r in rows]
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.2), sharex=True)
+
+    axes[0].plot(layers, cosines, marker="o", linewidth=2.0, color="#1f77b4")
+    axes[0].set_title("Residual cosine by layer")
+    axes[0].set_xlabel("Layer")
+    axes[0].set_ylabel("Cosine(low, full)")
+    axes[0].grid(True, alpha=0.25)
+
+    axes[1].plot(layers, mses, marker="s", linewidth=2.0, color="#d62728")
+    axes[1].set_title("Residual MSE by layer")
+    axes[1].set_xlabel("Layer")
+    axes[1].set_ylabel("Residual MSE")
+    axes[1].grid(True, alpha=0.25)
+
+    fig.suptitle("RegimeLift low/full separation profile")
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(FIG_DIR / "regime_separation_profile.png", dpi=220, bbox_inches="tight")
+    fig.savefig(FIG_DIR / "regime_separation_profile.pdf", bbox_inches="tight")
+    plt.close(fig)
+
+
 def write_experiment_timeline() -> None:
     lines = [
         r"\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.18\textwidth}X>{\raggedright\arraybackslash}p{0.26\textwidth}}",
@@ -261,15 +332,20 @@ def main() -> None:
     targeted_rows = read_csv(TARGETED_ROWS)
     layer_rows = read_csv(LAYER_SWEEP_ROWS)
     suffix_rows = read_csv(SUFFIX_SPAN_ROWS)
+    sanity_report = json.loads(SANITY_REPORT.read_text())
+    sanity_layer_rows = read_csv(SANITY_LAYER_ROWS)
 
     write_targeted_core_table(targeted_rows)
     write_layer_sweep_summary_table(layer_rows)
+    write_regime_separation_table(sanity_report)
+    write_regime_controls_table(sanity_report)
     write_experiment_timeline()
     write_log_excerpt()
 
     plot_targeted_curves(targeted_rows)
     plot_layer_sweep(layer_rows)
     plot_suffix_span(suffix_rows)
+    plot_regime_separation(sanity_layer_rows)
 
     print("Generated paper assets in", GEN_DIR)
     print("Generated paper figures in", FIG_DIR)

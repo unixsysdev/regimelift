@@ -1,6 +1,6 @@
-# Paper Draft
+# RegimeLift Paper Draft
 
-This directory contains the TeX source and generated assets for the active HeLMAS-3n research draft. Legacy He-LMAS material is referenced only as archived context.
+This directory contains the TeX source and generated assets for the active RegimeLift research draft. Legacy He-LMAS material is referenced only as archived context.
 
 ## Build
 
@@ -21,7 +21,7 @@ cd paper && make
 The PDF is built in GitHub Actions via `.github/workflows/ci.yml`.
 
 - Job: `paper`
-- Output artifact: `helmas3n-paper` (`paper/main.pdf`)
+- Output artifact: `regimelift-paper` (`paper/main.pdf`)
 
 The repository tracks paper sources and generated analysis assets. LaTeX temporary build files and the compiled PDF are CI outputs, not versioned source files.
 

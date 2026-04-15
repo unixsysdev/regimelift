@@ -163,7 +163,7 @@ def _match_metrics(full_tokens: torch.Tensor, candidate_tokens: torch.Tensor, ho
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Suffix-span sweep for HeLMAS-3n live handoff")
+    parser = argparse.ArgumentParser(description="Suffix-span sweep for RegimeLift live handoff")
     parser.add_argument("--extract-config", type=str, default="configs/extract_killtest40.yaml")
     parser.add_argument("--train-template", type=str, default="configs/train_residual.yaml")
     parser.add_argument("--checkpoint-root", type=str, default="artifacts/reports/killtest_v3/checkpoints")
