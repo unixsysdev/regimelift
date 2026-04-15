@@ -34,4 +34,4 @@ The repository tracks paper sources and generated analysis assets. LaTeX tempora
 
 ## Scope of the draft
 
-The draft is written as a living research document. It uses the completed pilot, layer-sweep, suffix-span, and targeted-site evidence as the current result base, while calling out the larger held-out80 validation as the active next gate.
+The draft is written as a living research document. It now includes the completed heldout80 targeted-site validation as part of the core evidence base, alongside the completed pilot, layer-sweep, and suffix-span studies.

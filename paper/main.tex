@@ -183,7 +183,7 @@ The completed tables in this draft therefore combine:
 \begin{itemize}[leftmargin=1.4em]
     \item a pilot split used for fast kill-tests and site sweeps;
     \item a smaller held-out split used in the frozen targeted-site study;
-    \item an active larger held-out80 rerun used only as ongoing validation, not as a completed result in this manuscript.
+    \item a completed heldout80 split used for larger-sample targeted-site validation.
 \end{itemize}
 The important discipline is that architectural changes are not justified until they survive the held-out handoff metric, not just the pilot tables.
 
@@ -285,7 +285,7 @@ The strongest completed result is the targeted site study summarized in Table~\r
     \label{fig:targeted-curves}
 \end{figure}
 
-The most important row in Table~\ref{tab:core} is \method{Targeted MLP @ layer34}. On the held-out split it achieves Match@1 of 0.700, Match@4 of 0.175, Match@8 of 0.100, and Match@16 of 0.05625. No other learned row comes close. This is the first point in the project where a learned intervention does what the project is supposed to do: materially recover continuation behavior on held-out prompts.
+The most important row in Table~\ref{tab:core} is \method{Targeted MLP @ layer34}. On the completed heldout80 split it achieves Match@1 of 0.775, Match@4 of 0.203, Match@8 of 0.116, and Match@16 of 0.064. No other learned row comes close. This is the first point in the project where a learned intervention does what the project is supposed to do: materially recover continuation behavior on held-out prompts.
 
 \subsection{Layer sensitivity}
 The corrected layer sweep showed that continuation recovery is controlled by a narrow intervention surface. Earlier pilot impressions suggested \method{layer16} might be the right target. The controlled sweep falsified that as a stable main site and instead showed that the strongest useful region lies substantially later in the stack.
@@ -339,14 +339,14 @@ The negative result is equally important. \method{layer16,last1} looked plausibl
 At some horizons the learned row exceeds the same-site exact-substitution reference. That means raw state fidelity is not identical to optimal rollout behavior. The sensible interpretation is that the reference patch is a control surface, not a mathematical upper bound for continuation match. This paper therefore uses the term \emph{reference patch} consistently instead of \emph{oracle ceiling}.
 
 \subsection{Limitations}
-The larger held-out80 rerun is still active. The earlier held-out validation accidentally used only 10 prompts, so the evaluator was hardened to fail fast on prompt-count mismatch and to write incremental artifacts. That change affects run hygiene, not the core scientific question, but the larger held-out result is still the next validation gate.
+An earlier held-out validation accidentally used only 10 prompts. The evaluator was therefore hardened to fail fast on prompt-count mismatch and to write incremental artifacts, and the completed heldout80 rerun is now the canonical larger-sample result.
 
 The other limitation is scope. This paper establishes one strong residual handoff site first. It does not yet claim that the same uplift map works uniformly across intermediate Mix-n-Match regimes, nor that KV uplift is already competitive.
 
 \subsection{Threats to validity}
 Three threats matter most at this stage.
 \begin{itemize}[leftmargin=1.4em]
-    \item \textbf{Prompt diversity.} The completed held-out result is real, but still limited in breadth. The larger held-out80 rerun exists precisely because prompt-count mistakes can otherwise make a result look stronger than it is.
+    \item \textbf{Prompt diversity.} The completed heldout80 result is real, but still limited in breadth relative to final publication standards. Additional held-out slices and intermediate-regime pairs remain necessary.
     \item \textbf{Single-site intervention.} RegimeLift has established a first useful site, not a full theory of all intervention surfaces. Sparse multi-layer reference patches remain stronger than many single-site learned interventions.
     \item \textbf{Objective mismatch.} The project already has evidence that excellent local residual fit does not guarantee good continuation recovery. This means future objective changes must be judged behaviorally, not cosmetically.
 \end{itemize}
@@ -360,7 +360,7 @@ This repository keeps the paper tied to concrete experiment artifacts. The curre
     \begin{minipage}{0.95\linewidth}
         \input{generated/log_excerpt.tex}
     \end{minipage}
-    \caption{Excerpt from the active held-out80 validation record. The purpose of this excerpt is to document that the larger held-out rerun is using the intended prompt pool and validation gate.}
+    \caption{Excerpt from the completed heldout80 validation record. The purpose of this excerpt is to document that the larger held-out rerun used the intended prompt pool and validation gate.}
     \label{tab:logexcerpt}
 \end{table}
 
@@ -370,7 +370,7 @@ RegimeLift now has a stable empirical spine. The project no longer rests on the 
 Within Gemma 3n's nested E2B/E4B family, low-to-full regime uplift is behaviorally recoverable at a specific learned handoff site, and broad residual fitting alone is not enough to find that site.
 \end{quote}
 
-That is the main result of the current paper. The next step is not to widen the architecture search blindly. It is to finish the held-out80 validation at the already-identified site and then decide whether objective refinement, multi-site learning, or KV-level targets are justified.
+That is the main result of the current paper. The next step is not to widen the architecture search blindly. It is to stress-test the already-identified site on broader held-out diversity and then decide whether objective refinement, multi-site learning, or KV-level targets are justified.
 
 \bibliographystyle{plain}
 \bibliography{references}

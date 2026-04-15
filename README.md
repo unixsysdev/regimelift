@@ -19,9 +19,10 @@ Completed evidence so far:
 - `layer16,last1` was a false lead: useful in early pilots, not robust on held-out data.
 - Broader training washed out the site-specific signal.
 - The oracle rows are reference patches, not ceilings.
+- Completed heldout80: `targeted_mlp(layer34,last1)` reached `h8=0.1156`, `h16=0.0641` vs no-patch `h8=0.0172`, `h16=0.0133`.
 
-Active validation:
-- `helmas3n/artifacts/reports/targeted_site_study_v5_holdout80/` is the current held-out80 rerun.
+Latest validation artifact:
+- `helmas3n/artifacts/reports/targeted_site_study_v5_holdout80/` is the completed heldout80 report.
 
 ## Where to start reading
 

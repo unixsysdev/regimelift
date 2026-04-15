@@ -102,6 +102,14 @@ Each sample stores:
 3. KV uplift baseline + direct comparison support.
 4. Flow refinement placeholder module (not default).
 
+## Latest Results
+
+- Completed heldout80 targeted-site rerun: `artifacts/reports/targeted_site_study_v5_holdout80/`.
+- `targeted_mlp(layer34,last1)` is the strongest learned method:
+  - `h1=0.7750`, `h4=0.2031`, `h8=0.1156`, `h16=0.0641`
+  - no-patch baseline: `h1=0.0375`, `h4=0.0250`, `h8=0.0172`, `h16=0.0133`
+- `targeted_mlp(layer16,last1)` does not generalize on heldout80.
+
 ## Notes
 
 - `configs/extract.yaml` now defines non-identical low/full regime controls via `text_overrides`.

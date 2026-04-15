@@ -14,21 +14,21 @@ PAPER_ROOT = REPO_ROOT / "paper"
 FIG_DIR = PAPER_ROOT / "figures"
 GEN_DIR = PAPER_ROOT / "generated"
 
-TARGETED_ROWS = REPO_ROOT / "helmas3n" / "artifacts" / "reports" / "targeted_site_study_v1" / "targeted_site_rows.csv"
+TARGETED_ROWS = REPO_ROOT / "helmas3n" / "artifacts" / "reports" / "targeted_site_study_v5_holdout80" / "targeted_site_rows.csv"
 LAYER_SWEEP_ROWS = REPO_ROOT / "helmas3n" / "artifacts" / "reports" / "layer_sweep_v2_corrected" / "layer_sweep_rows.csv"
 SUFFIX_SPAN_ROWS = REPO_ROOT / "helmas3n" / "artifacts" / "reports" / "suffix_span_sweep_v1" / "suffix_span_summary.csv"
 SANITY_REPORT = REPO_ROOT / "helmas3n" / "artifacts" / "reports" / "killtest_v3" / "sanity" / "sanity_report.json"
 SANITY_LAYER_ROWS = REPO_ROOT / "helmas3n" / "artifacts" / "reports" / "killtest_v3" / "sanity" / "per_layer_metrics.csv"
 
 TARGETED_METHOD_ORDER = [
-    ("low_to_full_no_patch", None, "No patch"),
-    ("identity", None, "Identity"),
-    ("broad_mlp", None, "Broad MLP"),
+    ("low_to_full_no_patch", "layer34", "No patch"),
+    ("identity", "layer34", "Identity"),
+    ("broad_mlp", "layer34", "Broad MLP"),
     ("targeted_mlp", "layer16", "Targeted MLP @ layer16"),
     ("targeted_mlp", "layer34", "Targeted MLP @ layer34"),
-    ("oracle_layer16", None, "Oracle layer16"),
-    ("oracle_layer34", None, "Oracle layer34"),
-    ("oracle_stride", None, "Oracle stride"),
+    ("oracle_layer16", "layer34", "Reference layer16"),
+    ("oracle_layer34", "layer34", "Reference layer34"),
+    ("oracle_stride", "layer34", "Reference stride"),
 ]
 
 HORIZONS = [1, 4, 8, 16]
@@ -75,17 +75,17 @@ def lookup_targeted(rows: list[dict[str, str]], split: str, method: str, experim
 
 def write_targeted_core_table(rows: list[dict[str, str]]) -> None:
     lines: list[str] = []
-    lines.append(r"\begin{tabular}{lcccccccc}")
+    lines.append(r"\begin{tabular}{lcccccc}")
     lines.append(r"\toprule")
-    lines.append(r"Method & Pilot h1 & Pilot h4 & Pilot h8 & Pilot h16 & Held-out h1 & Held-out h4 & Held-out h8 & Held-out h16 \\")
+    lines.append(r"Method & h1 & h4 & h8 & h16 & $\Delta$h8 & $\Delta$h16 \\")
     lines.append(r"\midrule")
     for method, site, label in TARGETED_METHOD_ORDER:
-        pilot = lookup_targeted(rows, "pilot", method, site)
         held = lookup_targeted(rows, "heldout", method, site)
         values = [
-            fmt(pilot[f"cont_match_h{h}_uplift_vs_full"]) for h in HORIZONS
-        ] + [
             fmt(held[f"cont_match_h{h}_uplift_vs_full"]) for h in HORIZONS
+        ] + [
+            fmt(held["delta_h8"]),
+            fmt(held["delta_h16"]),
         ]
         lines.append(latex_escape(label) + " & " + " & ".join(values) + r" \\")
     lines.append(r"\bottomrule")
@@ -168,31 +168,31 @@ def write_regime_controls_table(report: dict[str, Any]) -> None:
 
 
 def plot_targeted_curves(rows: list[dict[str, str]]) -> None:
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.2), sharey=True)
-    split_order = ["pilot", "heldout"]
+    fig, ax = plt.subplots(1, 1, figsize=(8.4, 4.4))
     method_rows = [
-        ("low_to_full_no_patch", None, "No patch", "#444444", "o", "-"),
-        ("broad_mlp", None, "Broad MLP", "#1f77b4", "s", "-"),
+        ("low_to_full_no_patch", "layer34", "No patch", "#444444", "o", "-"),
+        ("identity", "layer34", "Identity", "#7f7f7f", "o", "--"),
+        ("broad_mlp", "layer34", "Broad MLP", "#1f77b4", "s", "-"),
         ("targeted_mlp", "layer16", "Targeted layer16", "#ff7f0e", "^", "--"),
         ("targeted_mlp", "layer34", "Targeted layer34", "#2ca02c", "D", "-"),
-        ("oracle_layer34", None, "Reference layer34", "#d62728", "X", ":"),
-        ("oracle_stride", None, "Reference stride", "#9467bd", "P", ":"),
+        ("oracle_layer34", "layer34", "Reference layer34", "#d62728", "X", ":"),
+        ("oracle_stride", "layer34", "Reference stride", "#9467bd", "P", ":"),
     ]
 
-    for ax, split in zip(axes, split_order):
-        for method, site, label, color, marker, ls in method_rows:
-            row = lookup_targeted(rows, split, method, site)
-            ys = [float(row[f"cont_match_h{h}_uplift_vs_full"]) for h in HORIZONS]
-            ax.plot(HORIZONS, ys, label=label, color=color, marker=marker, linewidth=2.0, linestyle=ls)
-        ax.set_title(split.capitalize())
-        ax.set_xticks(HORIZONS)
-        ax.set_xlabel("Decode horizon (tokens)")
-        ax.grid(True, alpha=0.25)
+    for method, site, label, color, marker, ls in method_rows:
+        row = lookup_targeted(rows, "heldout", method, site)
+        ys = [float(row[f"cont_match_h{h}_uplift_vs_full"]) for h in HORIZONS]
+        ax.plot(HORIZONS, ys, label=label, color=color, marker=marker, linewidth=2.0, linestyle=ls)
 
-    axes[0].set_ylabel("Continuation match vs full")
-    axes[1].legend(loc="lower right", fontsize=8, frameon=False)
-    fig.suptitle("RegimeLift targeted handoff recovery")
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    ax.set_title("Heldout80 targeted handoff")
+    ax.set_xticks(HORIZONS)
+    ax.set_xlabel("Decode horizon (tokens)")
+    ax.set_ylabel("Continuation match vs full")
+    ax.grid(True, alpha=0.25)
+    ax.legend(loc="upper right", fontsize=8, frameon=False)
+
+    fig.suptitle("RegimeLift targeted handoff recovery (heldout80)")
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(FIG_DIR / "targeted_handoff_curves.png", dpi=220, bbox_inches="tight")
     fig.savefig(FIG_DIR / "targeted_handoff_curves.pdf", bbox_inches="tight")
     plt.close(fig)
@@ -303,7 +303,7 @@ def write_experiment_timeline() -> None:
         r"3 & Layer sweep over candidate sites & Passed: layer 34 is the strongest learned site. \\",
         r"4 & Suffix-span sweep at the selected sites & Passed: last1 is already the informative span. \\",
         r"5 & Targeted study with held-out prompts & Passed: layer34,last1 generalizes; oracle is reference. \\",
-        r"6 & Held-out80 rerun with fail-fast checks & Running: wrong prompt counts now abort immediately. \\",
+        r"6 & Held-out80 rerun with fail-fast checks & Completed: 80 prompts loaded and evaluated. \\",
         r"\bottomrule",
         r"\end{tabularx}",
     ]
@@ -316,10 +316,11 @@ def write_log_excerpt() -> None:
         r'resolved_heldout_extract_config = .../configs/extract_killtest40_holdout80.yaml',
         r'resolved_heldout_prompts_path = .../data/prompt_pool_v1_holdout80.jsonl',
         r'"heldout_prompt_count": 80',
+        r'"phase": "heldout:complete"',
+        r'"num_rows": 14',
         r'"heldout_prompt_id_first": "sym_0253"',
         r'"heldout_prompt_id_last": "con_0079"',
         r'[targeted] split=heldout prompts=80',
-        r'[layer-sweep] caching prompt 1/80',
         r'Identity control passed',
         r'layer34,last1 is the useful learned site',
         r"\end{verbatim}",

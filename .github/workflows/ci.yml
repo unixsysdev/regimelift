@@ -120,7 +120,7 @@ jobs:
             Rolling paper build from `main`.
 
             Source commit: `${{ github.sha }}`
-          prerelease: true
-          make_latest: false
+          prerelease: false
+          make_latest: true
           files: release/main.pdf
           overwrite_files: true
