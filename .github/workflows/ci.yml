@@ -2,6 +2,8 @@ name: ci
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "paper-v*"
   pull_request:
