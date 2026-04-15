@@ -60,6 +60,14 @@ jobs:
         run: |
           latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex
 
+      - name: Verify tracked paper PDF is in sync
+        run: |
+          git diff --exit-code -- paper/main.pdf || (
+            echo "paper/main.pdf is out of sync. Rebuild locally with:"
+            echo "  cd paper && python3 scripts/generate_assets.py && latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex"
+            exit 1
+          )
+
       - name: Upload paper PDF
         uses: actions/upload-artifact@v4
         with:
