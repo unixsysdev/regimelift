@@ -60,13 +60,14 @@ jobs:
         run: |
           latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex
 
-      - name: Verify tracked paper PDF is in sync
+      - name: Check tracked paper PDF sync status
         run: |
-          git diff --exit-code -- paper/main.pdf || (
-            echo "paper/main.pdf is out of sync. Rebuild locally with:"
-            echo "  cd paper && python3 scripts/generate_assets.py && latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex"
-            exit 1
-          )
+          if git diff --quiet -- paper/main.pdf; then
+            echo "paper/main.pdf is in sync."
+          else
+            echo "::warning::paper/main.pdf differs from CI-generated PDF."
+            echo "::warning::A sync commit will be created from the rolling artifact in paper_release_main."
+          fi
 
       - name: Upload paper PDF
         uses: actions/upload-artifact@v4
@@ -118,6 +119,19 @@ jobs:
         with:
           name: regimelift-paper
           path: release
+
+      - name: Sync tracked paper PDF from CI artifact
+        run: |
+          cp release/main.pdf paper/main.pdf
+          if git diff --quiet -- paper/main.pdf; then
+            echo "paper/main.pdf already in sync with rolling artifact."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add paper/main.pdf
+          git commit -m "ci: sync tracked paper PDF from rolling artifact [skip ci]"
+          git push origin HEAD:main
 
       - name: Publish rolling paper release
         uses: softprops/action-gh-release@v2
