@@ -45,6 +45,7 @@ helmas3n/
     gemma/
     eval/
   tests/
+  experiments/
   artifacts/
 ```
 

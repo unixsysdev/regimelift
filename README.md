@@ -20,22 +20,18 @@ Completed evidence so far:
 
 Active validation:
 - `helmas3n/artifacts/reports/targeted_site_study_v5_holdout80/` is the current held-out80 rerun.
-- That run is intentionally isolated and uses absolute paths so it can be audited from another session.
 
 ## Where to start reading
 
 - [Current HeLMAS-3n technical README](helmas3n/README.md)
+- [HeLMAS-3n experiment index](helmas3n/experiments/README.md)
+- [HeLMAS-3n targeted site study v1](helmas3n/experiments/targeted_site_study_v1/README.md)
 - [Archived legacy He-LMAS README](archive/legacy-he-lmas/README.md)
-- [Frozen targeted site study v1](archive/experiments/targeted_site_study_v1/README.md)
 - [Paper draft and build instructions](paper/README.md)
 
 ## Repository layout
 
 - `helmas3n/`: active code, configs, scripts, tests, and live artifacts for the Gemma 3n program.
-- `archive/`: frozen historical material and completed experiment snapshots.
+- `archive/`: frozen historical material for legacy He-LMAS only.
 - `archive/legacy-he-lmas/code/`: relocated root-level legacy code (`configs/`, `scripts/`, `src/`, `tests/`).
 - `paper/`: TeX source, generated figures, and the CI build path for the research draft.
-
-## Practical note
-
-The current scripts use absolute-path resolution for the evaluator runs. That is deliberate: it makes the live held-out rerun reproducible and avoids the path bugs that previously truncated the held-out split.
