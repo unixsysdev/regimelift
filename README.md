@@ -24,6 +24,33 @@ Completed evidence so far:
 Latest validation artifact:
 - `helmas3n/artifacts/reports/targeted_site_study_v5_holdout80/` is the completed heldout80 report.
 
+## Pending work (current phase)
+
+The project is in a fixed-site objective-ablation phase at `layer34,last1`.
+
+In progress now:
+- Objective ablation run on heldout80:
+  - output: `helmas3n/artifacts/reports/objective_ablation_layer34_last1_holdout80/`
+  - variants: `state_only`, `state_logit`, `heavy_logit`, `short_horizon`
+  - horizons: `h1,h4,h8,h16`
+
+Immediate gates after ablation completes:
+- Confirm winner beats the current `targeted_mlp(layer34,last1)` baseline at `h8` and `h16` on heldout80.
+- Confirm winner improves over no-patch and keeps meaningful closure to `oracle_layer34` reference.
+
+Queued support tracks after the winner check:
+- Learned-vs-reference diagnostics:
+  - script: `helmas3n/scripts/analyze_reference_vs_learned.py`
+  - output: `helmas3n/artifacts/reports/reference_vs_learned_layer34_last1/`
+- Cost/latency table:
+  - script: `helmas3n/scripts/measure_handoff_costs.py`
+  - output: `helmas3n/artifacts/reports/cost_table_layer34_last1/`
+
+Then:
+- Regenerate paper assets and PDF.
+- Update results tables/figures in `paper/` and `helmas3n/experiments/`.
+- Push synced artifacts and let CI publish the rolling paper release.
+
 ## Where to start reading
 
 - [Current RegimeLift Gemma 3n track README](helmas3n/README.md)
