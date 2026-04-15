@@ -2,6 +2,8 @@
 
 This repository is now centered on **HeLMAS-3n**: same-parent-model regime uplift inside Gemma 3n E4B.
 
+Gemma 3n publishes E2B and E4B as separate model artifacts, but the active research program here treats them as nested operating regimes of one parent family: a reduced E2B-like regime inside E4B and a fuller E4B regime. The project is therefore about regime handoff inside a shared MatFormer-style model family, not transfer between unrelated checkpoints.
+
 Primary question:
 
 > Can a low-activation nested regime inside Gemma 3n E4B be uplifted into the full-activation regime well enough to recover continuation behavior after handoff?

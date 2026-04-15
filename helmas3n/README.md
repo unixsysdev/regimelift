@@ -4,7 +4,7 @@ Nested-state uplift for Gemma 3n E4B.
 
 ## Thesis
 
-HeLMAS-3n learns a minimal transport map that upgrades internal state from a low-activation nested regime of **the same Gemma 3n E4B checkpoint** into the corresponding full-activation regime, so decoding can resume closer to native full-regime behavior.
+Gemma 3n is published as separate E2B and E4B artifacts, but we treat them here as nested operating regimes of one parent model family. HeLMAS-3n learns a minimal transport map that upgrades internal state from the reduced E2B-like regime inside Gemma 3n E4B into the corresponding fuller E4B regime, so decoding can resume closer to native full-regime behavior.
 
 This is intentionally different from original He-LMAS:
 
@@ -16,6 +16,7 @@ This is intentionally different from original He-LMAS:
 ### In scope
 
 - Paired state extraction from low/full activation regimes on identical prefixes.
+- These regimes are different operating modes of the same parent family, not unrelated checkpoints.
 - Residual uplift baselines: linear, low-rank residual, small MLP.
 - KV uplift baseline for direct cache handoff comparison.
 - Handoff-focused evaluation hierarchy:

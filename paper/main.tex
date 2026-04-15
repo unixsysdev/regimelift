@@ -1,269 +1,313 @@
 \documentclass[11pt]{article}
 
 \usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
 \usepackage{booktabs}
 \usepackage{tabularx}
 \usepackage{longtable}
 \usepackage{array}
 \usepackage{graphicx}
 \usepackage{subcaption}
-\usepackage{amsmath, amssymb}
+\usepackage{amsmath, amssymb, amsthm}
 \usepackage{hyperref}
 \usepackage{xcolor}
 \usepackage{enumitem}
 \usepackage{tikz}
 \usepackage{pgfplots}
 \usepackage{verbatim}
+\usepackage{float}
 \usetikzlibrary{arrows.meta, positioning, shapes.geometric, calc}
 \pgfplotsset{compat=1.18}
 
 \newcommand{\method}[1]{\texttt{#1}}
 \newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\low}{\mathrm{low}}
+\newcommand{\full}{\mathrm{full}}
+\newcommand{\KL}{\mathrm{KL}}
 
-\title{HeLMAS-3n: Nested-State Uplift for Gemma 3n E4B}
-\author{Draft for PhD review}
+\title{HeLMAS-3n: Targeted Residual Uplift Across Nested Gemma 3n Operating Regimes}
+\author{Marcel\\Independent Researcher}
 \date{\today}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-This paper focuses on HeLMAS-3n: nested-state uplift inside a single Gemma 3n E4B checkpoint. The active question is whether a low-activation nested regime can be translated into the full-activation regime well enough to recover continuation behavior after handoff. We study paired low/full forward passes on identical prompt prefixes, extract matched residual-stream states and caches, and train lightweight translators that approximate full-regime state from low-regime state. Across completed pilot, layer-sweep, suffix-span, and targeted-site experiments, the low/full regimes are clearly separated, identity control is exact, and the best learned intervention site is a specific full-regime patch surface at
-\method{layer34,last1}. A broader MLP baseline improves local state alignment but dilutes the site-specific continuation effect. The current evidence therefore points to intervention placement, not raw model capacity, as the dominant bottleneck.
+This paper studies state uplift across nested operating regimes in Gemma 3n. Gemma 3n is distributed as separate E2B and E4B artifacts, but its MatFormer-style design makes the reduced E2B-like regime part of the same parent family rather than an unrelated checkpoint. That architectural fact motivates a narrower and more testable question than heterogeneous model bridging: can internal state from the reduced operating regime be corrected just enough for decoding to resume under the fuller regime with improved behavioral fidelity? We investigate this question using paired low/full runs on identical prompt prefixes, residual-state translators with null controls, live handoff metrics at horizons 1/4/8/16, and a sequence of kill-tests that isolate where intervention actually matters. The main empirical result is that broad residual training is insufficient, while a targeted residual uplift at \method{layer34,last1} produces strong continuation recovery and generalizes to a held-out slice. The resulting picture is clear: the dominant bottleneck is intervention placement and regime-specific control, not generic state-fitting capacity.
 \end{abstract}
 
-\tableofcontents
-\newpage
-
 \section{Introduction}
-HeLMAS-3n studies same-parent-model handoff inside Gemma 3n E4B. The aim is practical and falsifiable: recover full-regime continuation behavior from low-regime prefix state using a lightweight uplift map.
+The project in this repository began with a broader bridge hypothesis: can one transplant reasoning state across distinct language models? That hypothesis was too unconstrained. HeLMAS-3n narrows the problem to a setting where structural relatedness is real and measurable: regime handoff inside Gemma 3n's shared E2B/E4B family.
 
-HeLMAS-3n deliberately narrows the question. Gemma 3n E4B is designed around a nested / MatFormer-style structure with selective activation and dynamic resource usage \cite{gemma3n2025,mrl2022}. That makes it a better testbed for a same-parent-state uplift hypothesis: the low-activation regime is not an alien model, but a compressed sibling of the full regime. If the sibling relation is real, the translation from low to full should be a small corrective map rather than a universal bridge.
+Gemma 3n is documented as a nested / selective-activation architecture in which reduced and fuller operating modes coexist inside one parent family \cite{gemma3n2025,mrl2022}. The E2B and E4B artifacts are published separately, but the scientific object of interest here is not transfer between unrelated checkpoints. It is uplift between two operating regimes that were trained as part of the same nested family. That difference matters. If the reduced regime is an embedded sibling of the fuller regime, then a useful handoff might require only a small corrective transport map rather than a universal latent bridge.
 
-The paper therefore asks a limited question:
+This paper asks a deliberately limited question:
 \begin{quote}
-Can a low-activation Gemma 3n E4B prefix state be uplifted into the corresponding full-activation state so that decoding resumes closer to native full-regime behavior?
+Can a low-activation Gemma 3n prefix state be uplifted into the corresponding fuller-regime state so that decoding resumes closer to native full-regime behavior?
 \end{quote}
 
-This draft is conservative. It includes only completed results and explicitly labels the larger held-out80 rerun as active validation.
-
-\section{Historical context (brief)}
-The repository includes archived material from an earlier heterogeneous He-LMAS bridge attempt \cite{helmasLegacy2026}. That line remains useful as context but is not the active research track.
-
-The current track is HeLMAS-3n: same-checkpoint regime uplift in Gemma 3n E4B \cite{gemma3n2025}. The key framing change is:
-\begin{itemize}[leftmargin=1.4em]
-    \item Archived He-LMAS: cross-model transfer.
-    \item HeLMAS-3n: same-parent regime uplift.
-\end{itemize}
-This narrower formulation is what made the current experiments falsifiable.
-
-\section{Method}
-\subsection{Paired-state extraction}
-For each prompt prefix we run the same checkpoint twice: once under the low regime and once under the full regime. The extraction pipeline stores matched metadata and states at aligned token positions and layers.
-
-The stored sample schema includes:
-\begin{itemize}[leftmargin=1.4em]
-    \item prompt id
-    \item token position
-    \item layer index
-    \item residual-stream state in low and full regimes
-    \item optional KV cache slices
-    \item optional sparse logits snapshots
-\end{itemize}
-
-The extraction scripts use absolute path resolution and write sharded artifacts with manifest files. That detail matters because the run history showed that path ambiguity can silently truncate the held-out split.
-
-\subsection{Targets}
-The primary target is the residual-stream state. The KV cache is retained as a secondary comparison target.
-
-We do this intentionally. If residual uplift works, the full regime's own projection layers can generate the relevant K and V states. Direct KV uplift is therefore a stricter and more brittle target, and it should only be promoted after residual uplift is established.
-
-\subsection{Models}
-We evaluate four families of translators:
-\begin{itemize}[leftmargin=1.4em]
-    \item \method{identity}: no correction.
-    \item \method{mean-delta} and linear variants: minimal parametric baselines.
-    \item \method{lowrank} and \method{mlp}: small learned translators.
-    \item \method{flow}: a placeholder for future refinement, not the first-stage solution.
-\end{itemize}
-
-The current paper focuses on the residual target. KV uplift is tracked but not elevated above the residual result until it proves useful.
-
-\subsection{Handoff evaluation}
-The central evaluation is resumed decoding after handoff. We use greedy continuation metrics with horizons 1, 4, 8, and 16 tokens. The same prompt prefix is used in both regimes; the low-regime state is patched, and decoding then resumes under the full regime.
-
-Our metric ladder is:
+The answer is now evidence-based rather than speculative. Across completed separation tests, null controls, layer sweeps, suffix-span sweeps, and targeted-site studies, the work supports four concrete claims:
 \begin{enumerate}[leftmargin=1.4em]
-    \item local state match (cosine / MSE)
-    \item next-token agreement / KL proxy
-    \item short continuation match after handoff
-    \item longer-horizon drift
+    \item low/full regimes are genuinely separated;
+    \item identity is an exact control for the live handoff path;
+    \item local state alignment alone is not enough;
+    \item a specific learned intervention site, \method{layer34,last1}, yields the first robust continuation recovery result.
 \end{enumerate}
 
-The project only counts as successful when the lower rung improves and the continuation rung improves as well.
-
-\subsection{Controls and failure gates}
-The strictest control is the identity row. Identity must match proper low-to-full no-patch exactly.
-
-Other gates used in the run sequence:
+\paragraph{Contributions.}
+The current draft makes four contributions.
 \begin{itemize}[leftmargin=1.4em]
-    \item low/full separation must be meaningful before training anything.
-    \item extractor pairing must be unambiguous at the prompt/layer/token level.
-    \item learned translation must beat the proper no-patch baseline before any architectural escalation.
-    \item oracle patch rows are reference patches, not ceilings.
+    \item It formulates same-parent regime uplift in Gemma 3n as a falsifiable handoff problem rather than a generic manifold-alignment claim.
+    \item It introduces a paired-state extraction and evaluation pipeline that measures both local alignment and resumed decoding behavior.
+    \item It shows empirically that intervention site dominates broad translator capacity: broad MLP training improves local metrics, but targeted training at the correct site recovers behavior.
+    \item It freezes a first practical learned handoff result at \method{layer34,last1} while documenting the active larger held-out validation as the next gate.
 \end{itemize}
 
-\subsection{Experimental path}
-Figure~\ref{fig:pipeline} summarizes the active research path.
+\section{Background and framing}
+\subsection{From archived He-LMAS to HeLMAS-3n}
+The archived He-LMAS project attempted heterogeneous cross-model transfer. That historical work remains useful as context, but it is not the active research track \cite{helmasLegacy2026}. HeLMAS-3n changes the problem class:
+\begin{itemize}[leftmargin=1.4em]
+    \item Archived He-LMAS: transfer between different models.
+    \item HeLMAS-3n: uplift between nested operating regimes of the same parent family.
+\end{itemize}
 
-\begin{figure}[h]
+That reframing is not cosmetic. It replaces an ambitious but weakly constrained hypothesis with a narrower one whose failure modes can be isolated experimentally.
+
+\subsection{Why Gemma 3n is the right testbed}
+Gemma 3n is explicitly documented as a nested family with selective activation and Mix-n-Match style operating regimes \cite{gemma3n2025}. The reduced E2B-like path and the fuller E4B path are therefore related in a stronger sense than two arbitrary checkpoints. They are separate published artifacts, but they still belong to one shared structural family. For this paper, the important implication is:
+\begin{quote}
+the reduced path is different enough to create a real handoff problem, yet related enough that a small corrective map is plausible.
+\end{quote}
+
+That is the central scientific bet behind HeLMAS-3n.
+
+\section{Problem formulation}
+Let $r \in \{\low,\full\}$ denote the reduced and fuller regimes. For prompt prefix $x_{1:T}$, layer $\ell$, and token position $t$, define the residual-stream state
+\[
+z^{(r)}_{\ell,t} \in \R^d.
+\]
+The primary objective is to learn a transport map that predicts the fuller-regime state from the reduced-regime state at a chosen intervention site:
+\[
+\hat{z}^{(\full)}_{\ell,t} = f_\theta\!\left(z^{(\low)}_{\ell,t}, c\right)
+= z^{(\low)}_{\ell,t} + \Delta_\theta\!\left(z^{(\low)}_{\ell,t}, c\right),
+\]
+where $c$ is optional conditioning metadata such as layer index, token position, and regime descriptor.
+
+The project began with broad layer-conditioned translators, but the later evidence showed that targeting a specific site matters more than fitting a globally smooth map.
+
+\subsection{Training objective}
+For residual uplift, the current objective is the weighted combination
+\[
+\mathcal{L}
+= \lambda_{\text{state}} \mathcal{L}_{\text{state}}
++ \lambda_{\text{logit}} \mathcal{L}_{\text{logit}},
+\]
+with
+\[
+\mathcal{L}_{\text{state}}
+= \left\lVert \hat{z}^{(\full)}_{\ell,t} - z^{(\full)}_{\ell,t} \right\rVert_2^2
++ \lambda_{\cos}\left(1 - \cos\!\left(\hat{z}^{(\full)}_{\ell,t}, z^{(\full)}_{\ell,t}\right)\right),
+\]
+and
+\[
+\mathcal{L}_{\text{logit}}
+= \KL\!\left(
+p^{(\full)}_{t+1} \,\middle\|\, p^{(\text{uplift})}_{t+1}
+\right).
+\]
+
+The deployment criterion is behavioral rather than geometric: improved continuation after handoff. Let $y^{(\full)}_{t+i}$ denote greedy continuation under the fuller regime and $\hat{y}_{t+i}$ the continuation after patching the reduced regime and resuming under the fuller regime. For horizon $H \in \{1,4,8,16\}$, define
+\[
+\mathrm{Match}@H
+= \frac{1}{NH}\sum_{n=1}^N \sum_{i=1}^{H}
+\mathbf{1}\!\left[\hat{y}^{(n)}_{t+i} = y^{(\full,n)}_{t+i}\right].
+\]
+The project only counts as successful when these continuation metrics improve over the proper no-patch baseline.
+
+\section{Experimental design}
+\subsection{Paired-state extraction}
+For each prompt prefix, the same parent Gemma 3n family is run under two operating modes: a reduced E2B-like regime and a fuller E4B regime. The extractor records matched layer/token metadata and paired tensors at aligned positions. Each sample contains:
+\begin{itemize}[leftmargin=1.4em]
+    \item prompt identifier;
+    \item token position;
+    \item layer index;
+    \item residual-stream state in both regimes;
+    \item optional KV cache slices;
+    \item optional sparse logits snapshots.
+\end{itemize}
+
+The current paper focuses on residual uplift first. KV uplift remains a secondary object because direct cache prediction is more brittle and was not yet shown to improve the central behavioral metrics.
+
+\subsection{Model families and controls}
+The completed experiments cover:
+\begin{itemize}[leftmargin=1.4em]
+    \item \method{identity}: no correction;
+    \item \method{mean-delta}, global linear, and per-layer linear baselines;
+    \item \method{lowrank} and \method{mlp} residual translators;
+    \item same-site exact-substitution reference patches (formerly called ``oracle'' rows in earlier notes).
+\end{itemize}
+
+The strictest control is \method{identity}. If identity differs from the proper no-patch path, the evaluator is invalid. That check now passes exactly.
+
+\subsection{Evaluation ladder}
+The evaluation hierarchy is intentionally brutal:
+\begin{enumerate}[leftmargin=1.4em]
+    \item low/full separation sanity checks;
+    \item extractor alignment checks;
+    \item null controls and broad learned baselines;
+    \item live layer sweeps;
+    \item suffix-span sweeps;
+    \item targeted-site training and held-out validation.
+\end{enumerate}
+
+This sequence matters because it eliminates false-success paths. The project explicitly rejects the claim ``the translator works'' if only local MSE improves while continuation remains unchanged.
+
+\begin{figure}[t]
     \centering
+    \resizebox{0.95\linewidth}{!}{%
     \begin{tikzpicture}[
         node distance=1.35cm and 1.6cm,
         box/.style={rounded corners, draw=black!70, fill=black!3, align=center, minimum width=3.2cm, minimum height=1cm},
         arrow/.style={-{Latex[length=3mm]}, very thick}
     ]
-        \node[box] (src) {Gemma 3n E4B\\low regime};
-        \node[box, right=of src] (pair) {Paired extraction\\same prefix, same token positions};
-        \node[box, right=of pair] (train) {Residual uplift\\linear / low-rank / MLP};
-        \node[box, below=of train] (eval) {Continuation handoff\\h1 / h4 / h8 / h16};
-        \node[box, left=of eval] (oracle) {Reference patches\\same-site and sparse multi-layer};
-        \node[box, left=of oracle] (paper) {Decision memo\\paper draft\\archived results};
+        \node[box] (src) {Reduced Gemma 3n\\E2B-like regime};
+        \node[box, right=of src] (pair) {Paired extraction\\same prefix, same positions};
+        \node[box, right=of pair] (train) {Residual uplift\\null controls + learned maps};
+        \node[box, below=of train] (eval) {Live handoff evaluation\\Match@1/4/8/16};
+        \node[box, left=of eval] (oracle) {Reference patches\\single-site and sparse multi-layer};
+        \node[box, left=of oracle] (memo) {Decision memo\\paper draft\\frozen experiments};
 
         \draw[arrow] (src) -- (pair);
         \draw[arrow] (pair) -- (train);
         \draw[arrow] (train) -- (eval);
         \draw[arrow] (oracle) -- (eval);
-        \draw[arrow] (paper) -- (oracle);
+        \draw[arrow] (memo) -- (oracle);
         \draw[arrow] (pair) |- (oracle);
     \end{tikzpicture}
-    \caption{HeLMAS-3n research pipeline. The current evidence comes from paired extraction, local uplift training, and continuation handoff evaluation.}
+    }
+    \caption{Active HeLMAS-3n pipeline. The work progresses from paired extraction to residual uplift and then to live continuation handoff.}
     \label{fig:pipeline}
 \end{figure}
 
-\section{Experiment chronology}
-Table~\ref{tab:timeline} records the actual sequence of experiments and the gate each one answered.
+\section{Experiment sequence}
+The evidence in this paper is the output of a fixed sequence of kill-tests rather than one monolithic run. Table~\ref{tab:timeline} records that sequence.
 
-\begin{table}[h]
+\begin{table}[H]
     \centering
     \small
     \input{generated/experiment_timeline.tex}
-    \caption{Experiment chronology and the question each run answered.}
+    \caption{Chronology of the completed experiment program and the gate answered by each phase.}
     \label{tab:timeline}
 \end{table}
 
+The key transition in that sequence was from broad training to targeted intervention. Broad residual training improved local state metrics but did not recover behavior strongly enough. The subsequent layer and span sweeps isolated the intervention surface before targeted training was attempted.
+
 \section{Results}
 \subsection{Core targeted-site result}
-The strongest completed result is the targeted site study. The initial broad MLP baseline improved local alignment, but it was the targeted residual translator at \method{layer34,last1} that generalized most clearly on held-out prompts.
+The strongest completed result is the targeted site study summarized in Table~\ref{tab:core} and Figure~\ref{fig:targeted-curves}. The contrast is decisive:
+\begin{itemize}[leftmargin=1.4em]
+    \item \method{identity} matches \method{no patch} exactly;
+    \item broad MLP training improves over the no-patch baseline only weakly;
+    \item targeted MLP at \method{layer16,last1} fails to generalize;
+    \item targeted MLP at \method{layer34,last1} produces the first strong held-out continuation recovery result.
+\end{itemize}
 
-\begin{table}[h]
+\begin{table}[H]
     \centering
     \small
-    \caption{Continuation match versus full-regime decoding for the frozen targeted site study. Values are exact means over the completed pilot and held-out-10 splits.}
-    \input{generated/core_results_table.tex}
+    \caption{Continuation match versus full-regime decoding for the completed targeted-site study.}
+    \resizebox{\linewidth}{!}{\input{generated/core_results_table.tex}}
     \label{tab:core}
 \end{table}
 
-\begin{figure}[h]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.95\linewidth]{figures/targeted_handoff_curves.pdf}
-    \caption{Continuation match curves for the targeted site study. The plot shows why \method{layer34,last1} became the stable learned site: it is the first row that clearly improves held-out continuation recovery instead of only local state fit.}
+    \caption{Continuation match curves for the targeted-site study. The practical result is the separation between broad training and targeted training at \method{layer34,last1}.}
     \label{fig:targeted-curves}
 \end{figure}
 
-The important read on Table~\ref{tab:core} and Figure~\ref{fig:targeted-curves} is not just that the learned translator beats no-patch. It is that the learned translator at the correct site beats the broad baseline by enough to survive a held-out split.
+The most important row in Table~\ref{tab:core} is \method{Targeted MLP @ layer34}. On the held-out split it achieves Match@1 of 0.700, Match@4 of 0.175, Match@8 of 0.100, and Match@16 of 0.05625. No other learned row comes close. This is the first point in the project where a learned intervention does what the project is supposed to do: materially recover continuation behavior on held-out prompts.
 
 \subsection{Layer sensitivity}
-The layer sweep showed that site choice matters more than raw model capacity. The strongest learned continuation signal does not appear everywhere; it concentrates at specific layers. In particular, \method{layer16} looked promising early, but it was not robust once the controls were corrected and held-out prompts were enforced.
+The corrected layer sweep showed that continuation recovery is controlled by a narrow intervention surface. Earlier pilot impressions suggested \method{layer16} might be the right target. The controlled sweep falsified that as a stable main site and instead showed that the strongest useful region lies substantially later in the stack.
 
-\begin{table}[h]
+\begin{table}[H]
     \centering
     \small
     \input{generated/layer_sweep_summary_table.tex}
-    \caption{Summary of the corrected layer sweep. The table reports the best layer for horizon 8 and horizon 16 for each method family.}
+    \caption{Summary of the corrected layer sweep. The learned and reference-patch peaks are not uniform across the stack.}
     \label{tab:layersweep}
 \end{table}
 
-\begin{figure}[h]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.95\linewidth]{figures/layer_sweep_sensitivity.pdf}
-    \caption{Layer sensitivity for live handoff. The learned translator and the reference patch peak at different layers, but the same conclusion remains: continuation recovery is controlled by a narrow intervention surface rather than a uniformly good translator.}
+    \caption{Layer sensitivity of live handoff. The main result is not just that some layers are better than others, but that broad training was washing out the signal at the truly useful site.}
     \label{fig:layersweep}
 \end{figure}
 
 \subsection{Suffix-span sensitivity}
-The suffix-span sweep addressed a narrower question: does the patch need more recent context than the last token? The answer in the completed pilot was mostly no. Once the intervention surface was at the right site, widening the suffix from last 1 to last 4 or last 8 tokens did not buy much in the measured continuation metrics.
+Once the correct intervention site was isolated, the next question was whether the patch needed more recent context than the final prefix token. The completed suffix-span sweep says mostly no: widening from the last token to the last 4 or 8 tokens did not produce a comparable gain to moving the intervention to the right site.
 
-\begin{figure}[h]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.95\linewidth]{figures/suffix_span_sensitivity.pdf}
-    \caption{Suffix-span sensitivity at the selected intervention sites. The main signal is that the patch width is not the dominant knob once the site is correct.}
+    \caption{Suffix-span sensitivity at the selected intervention sites. Patch width matters less than intervention site in the completed pilot.}
     \label{fig:suffix}
 \end{figure}
 
-\subsection{What the evidence supports}
-The current evidence is strong enough to support the following claims:
+\subsection{What the evidence now supports}
+The current evidence justifies the following claims:
 \begin{itemize}[leftmargin=1.4em]
-    \item low/full regimes in Gemma 3n E4B are genuinely different;
-    \item identity is a correct control and equals proper no-patch;
-    \item learned uplift is real but site-dependent;
-    \item \method{layer34,last1} is the first learned site that generalizes on held-out prompts;
-    \item oracle rows are reference patches, not strict ceilings;
-    \item the dominant bottleneck is intervention placement, not just translator width.
+    \item low/full Gemma 3n operating regimes are measurably distinct;
+    \item the live handoff path is valid because identity equals proper no-patch exactly;
+    \item local residual fit is insufficient as a success criterion;
+    \item the first robust learned handoff site is \method{layer34,last1};
+    \item same-site exact substitution is a reference patch, not a hard behavioral ceiling;
+    \item intervention placement is a more important bottleneck than broad translator capacity.
 \end{itemize}
 
 \section{Discussion}
-\subsection{Why the result changed the project}
-The project started as a question about whether a model can recover another model's reasoning path. The completed experiments show that the answer depends strongly on the intervention surface. A broad MLP can make state vectors look better, but that is not the same as recovering continuation behavior.
+\subsection{Why this is not just ``two different models''}
+The right framing is neither extreme. The reduced and fuller regimes are not identical, and the published E2B and E4B artifacts are exposed separately. But for the purposes of this project they are still nested operating regimes of one parent family, trained and structured together rather than unrelated standalone models. That is why same-parent uplift is a coherent hypothesis and why the experiments can legitimately ask whether a small corrective transport suffices.
 
-This matters scientifically because it shifts the center of gravity from "bigger translator" to "where does the correction land?" That is a more causal and more publishable question.
+\subsection{Why \method{layer34,last1} changes the project}
+Before the targeted-site study, the project had evidence of regime separation and local learnability but not of meaningful behavioral recovery. The \method{layer34,last1} result changes that. It turns the work from ``interesting internal geometry'' into a practical handoff result with held-out support.
 
-\subsection{Why \method{layer34,last1} matters}
-The completed targeted-site study and the held-out validation both point to one site: \method{layer34,last1}. This is the first site where the learned model is not merely a prettier fit. It is a practical handoff site.
+The negative result is equally important. \method{layer16,last1} looked plausible in earlier sweeps and failed under stronger validation. That failure made the final result more credible because it showed the project was not simply confirming whichever site looked best in an early pilot.
 
-The companion lesson is equally important: \method{layer16,last1} was a false lead. It looked plausible in earlier sweeps, but it did not survive the more disciplined evaluation.
+\subsection{Why the reference patch is not a ceiling}
+At some horizons the learned row exceeds the same-site exact-substitution reference. That means raw state fidelity is not identical to optimal rollout behavior. The sensible interpretation is that the reference patch is a control surface, not a mathematical upper bound for continuation match. This paper therefore uses the term \emph{reference patch} consistently instead of \emph{oracle ceiling}.
 
-\subsection{Why the oracle is a reference patch, not a ceiling}
-At least one learned row beats the same-site oracle on some horizons. That means the exact-substitution reference patch is not a behavioral upper bound. The likely reasons are non-monotonicity in the continuation metric, operational mismatch between exact substitution and the learned patch, or the fact that raw fidelity is not identical to optimal rollout behavior.
+\subsection{Limitations}
+The larger held-out80 rerun is still active. The earlier held-out validation accidentally used only 10 prompts, so the evaluator was hardened to fail fast on prompt-count mismatch and to write incremental artifacts. That change affects run hygiene, not the core scientific question, but the larger held-out result is still the next validation gate.
 
-The paper therefore uses the label ``reference patch'' instead of ``upper bound''.
+The other limitation is scope. This paper establishes one strong residual handoff site first. It does not yet claim that the same uplift map works uniformly across intermediate Mix-n-Match regimes, nor that KV uplift is already competitive.
 
-\subsection{Current limitation}
-The active held-out80 rerun is still in flight. That run exists because the earlier held-out validation accidentally used only 10 prompts. The current evaluator now hard-fails on prompt-count mismatch and writes incremental artifacts so that future failures leave usable evidence.
+\section{Reproducibility and run record}
+This repository keeps the paper tied to concrete experiment artifacts. The current run record is summarized by the excerpt below.
 
-This is a run-hygiene fix, not a research-direction change.
-
-\section{Log excerpts and run audit}
-The following excerpts are included to document how the current active run was actually executed.
-
-\subsection{Held-out80 gate}
-\begin{verbatim}
-"resolved_heldout_extract_config": "/home/marcel/Work/He-LMAS/helmas3n/configs/extract_killtest40_holdout80.yaml"
-"resolved_heldout_prompts_path": "/home/marcel/Work/He-LMAS/data/prompt_pool_v1_holdout80.jsonl"
-"heldout_prompt_count": 80
-"heldout_prompt_id_first": "sym_0253"
-"heldout_prompt_id_last": "con_0079"
-[targeted] split=heldout prompts=80
-\end{verbatim}
-
-\subsection{Interpretation-excerpt}
-\begin{verbatim}
-Identity control passed.
-layer34,last1 is the useful learned site.
-layer16,last1 is not robust enough to carry forward.
-\end{verbatim}
+\begin{table}[H]
+    \centering
+    \small
+    \begin{minipage}{0.95\linewidth}
+        \input{generated/log_excerpt.tex}
+    \end{minipage}
+    \caption{Excerpt from the active held-out80 validation record. The purpose of this excerpt is to document that the larger held-out rerun is using the intended prompt pool and validation gate.}
+    \label{tab:logexcerpt}
+\end{table}
 
 \section{Conclusion}
-HeLMAS-3n is no longer a speculative bridge idea. It is a measured regime-uplift problem inside Gemma 3n E4B with a stable experimental spine:
-\begin{itemize}[leftmargin=1.4em]
-    \item the low/full regimes differ;
-    \item the control path is sound;
-    \item \method{layer34,last1} is the first practical learned handoff site;
-    \item broad translators are not enough by themselves;
-    \item continuation recovery is controlled by a narrow intervention surface.
-\end{itemize}
+HeLMAS-3n now has a stable empirical spine. The project no longer rests on the vague claim that ``state translation might work.'' It now supports a sharper statement:
+\begin{quote}
+Within Gemma 3n's nested E2B/E4B family, low-to-full regime uplift is behaviorally recoverable at a specific learned handoff site, and broad residual fitting alone is not enough to find that site.
+\end{quote}
 
-The next step is to finish the held-out80 validation, then decide whether to refine the objective at the same site or promote the project to the KV target.
+That is the main result of the current paper. The next step is not to widen the architecture search blindly. It is to finish the held-out80 validation at the already-identified site and then decide whether objective refinement, multi-site learning, or KV-level targets are justified.
 
 \bibliographystyle{plain}
 \bibliography{references}
