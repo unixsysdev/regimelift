@@ -24,7 +24,11 @@ from helmas3n.src.losses.attention_loss import (
     attention_output_consistency_loss,
     direct_kv_consistency_loss,
 )
-from helmas3n.src.losses.logit_loss import project_topk_logits, sparse_topk_kl_loss
+from helmas3n.src.losses.logit_loss import (
+    project_topk_logits,
+    sparse_top1_cross_entropy,
+    sparse_topk_kl_loss,
+)
 from helmas3n.src.losses.state_loss import state_reconstruction_loss
 from helmas3n.src.models.uplift_flow import LayerConditionedFlowUplift
 from helmas3n.src.models.uplift_baselines import (
@@ -261,8 +265,9 @@ def _compute_batch_loss(ctx: TrainContext, batch: Dict[str, Any]) -> tuple[torch
     }
 
     logit_weight = float(loss_cfg.get("logit_weight", 0.0))
+    next_token_ce_weight = float(loss_cfg.get("next_token_ce_weight", 0.0))
     if (
-        logit_weight > 0
+        (logit_weight > 0 or next_token_ce_weight > 0)
         and ctx.logit_head is not None
         and "full_logits_indices" in batch
         and "full_logits_values" in batch
@@ -284,9 +289,14 @@ def _compute_batch_loss(ctx: TrainContext, batch: Dict[str, Any]) -> tuple[torch
                 final_norm_weight=ctx.logit_head.get("final_norm_weight"),
                 final_norm_eps=float(ctx.logit_head["final_norm_eps"].item()),
             )
-            logit_kl = sparse_topk_kl_loss(pred_vals, tgt_vals)
-            total = total + logit_weight * logit_kl
-            logs["loss_logit_kl"] = float(logit_kl.item())
+            if logit_weight > 0:
+                logit_kl = sparse_topk_kl_loss(pred_vals, tgt_vals)
+                total = total + logit_weight * logit_kl
+                logs["loss_logit_kl"] = float(logit_kl.item())
+            if next_token_ce_weight > 0:
+                next_token_ce = sparse_top1_cross_entropy(pred_vals, tgt_vals)
+                total = total + next_token_ce_weight * next_token_ce
+                logs["loss_next_token_ce"] = float(next_token_ce.item())
 
     attn_weight = float(loss_cfg.get("attention_weight", 0.0))
     if (

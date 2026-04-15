@@ -40,3 +40,12 @@ def sparse_topk_kl_loss(
     tgt = F.softmax(target_logits_subset / temperature, dim=-1)
     pred_log = F.log_softmax(pred_logits_subset / temperature, dim=-1)
     return F.kl_div(pred_log, tgt, reduction="batchmean") * (temperature**2)
+
+
+def sparse_top1_cross_entropy(
+    pred_logits_subset: torch.Tensor,
+    target_logits_subset: torch.Tensor,
+) -> torch.Tensor:
+    """CE on the target top-1 token index over shared sparse top-k logits."""
+    target_top1 = target_logits_subset.argmax(dim=-1)
+    return F.cross_entropy(pred_logits_subset, target_top1)

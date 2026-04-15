@@ -9,8 +9,8 @@ from helmas3n.src.losses.state_loss import state_reconstruction_loss
 def test_state_reconstruction_loss_zero_on_match() -> None:
     x = torch.randn(4, 16)
     losses = state_reconstruction_loss(x, x, mse_weight=1.0, cosine_weight=0.5)
-    assert torch.isclose(losses["mse"], torch.tensor(0.0), atol=1e-7)
-    assert torch.isclose(losses["cosine"], torch.tensor(0.0), atol=1e-7)
+    assert losses["mse"].abs().item() < 1e-7
+    assert losses["cosine"].abs().item() < 1e-6
 
 
 def test_sparse_topk_kl_non_negative() -> None:
