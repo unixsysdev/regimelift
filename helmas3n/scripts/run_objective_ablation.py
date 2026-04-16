@@ -53,6 +53,13 @@ def _write_summary(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
+def _load_existing_rows(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    with path.open("r", newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
 def _load_reference_metrics(path: Path) -> dict[str, float]:
     rows = list(csv.DictReader(path.read_text(encoding="utf-8").splitlines()))
     ref_rows = [r for r in rows if r.get("split") == "heldout" and r.get("experiment_site") == "layer34"]
@@ -124,6 +131,7 @@ def main() -> None:
     parser.add_argument("--max-prompts", type=int, default=80)
     parser.add_argument("--max-eval-batches", type=int, default=50)
     parser.add_argument("--reuse-checkpoints", action="store_true")
+    parser.add_argument("--resume", action="store_true", help="Resume from an existing rows CSV in out-dir if present.")
     args = parser.parse_args()
 
     train_configs = [_resolve(x.strip()) for x in args.train_configs.split(",") if x.strip()]
@@ -134,12 +142,20 @@ def main() -> None:
     horizons = _parse_horizons(args.horizons)
     reference = _load_reference_metrics(reference_rows)
 
-    rows: list[dict[str, Any]] = []
+    rows_path = out_dir / "objective_ablation_rows.csv"
+    existing_rows = _load_existing_rows(rows_path) if args.resume else []
+    rows: list[dict[str, Any]] = list(existing_rows)
+    done_variants = {str(row.get("variant", "")) for row in existing_rows}
+
     for cfg_path in train_configs:
         cfg = _load_yaml(cfg_path)
         variant = cfg["experiment"]["name"]
         ckpt_dir = Path(cfg["experiment"]["out_dir"])
         checkpoint = ckpt_dir / "last.pt"
+
+        if variant in done_variants:
+            print(f"[ablation] resume skip completed variant: {variant}", flush=True)
+            continue
 
         if args.reuse_checkpoints and checkpoint.exists():
             print(f"[ablation] reuse checkpoint for {variant}: {checkpoint}", flush=True)
@@ -212,7 +228,7 @@ def main() -> None:
             "best_by_delta_h8": max(rows, key=lambda r: float(r.get("delta_h8", -1e9)))["variant"] if rows else None,
             "best_by_delta_h16": max(rows, key=lambda r: float(r.get("delta_h16", -1e9)))["variant"] if rows else None,
         }
-        _write_csv(out_dir / "objective_ablation_rows.csv", rows)
+        _write_csv(rows_path, rows)
         _write_report(out_dir / "objective_ablation_report.md", rows, horizons)
         _write_summary(out_dir / "objective_ablation_summary.json", summary)
 
