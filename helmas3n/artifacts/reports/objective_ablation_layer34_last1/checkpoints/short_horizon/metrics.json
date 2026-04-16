@@ -1,0 +1,35 @@
+{
+  "best_val_mse": 0.4148391470313072,
+  "final_val_mse": 0.8318631529808045,
+  "final_val_cosine": 0.9932576447725296,
+  "history": [
+    {
+      "step": 200,
+      "epoch": 1,
+      "loss_total": 1.572106957435608,
+      "loss_state_mse": 0.7890039086341858,
+      "loss_state_cos": 0.008456707000732422,
+      "loss_logit_kl": 2.237679958343506,
+      "loss_next_token_ce": 0.11010773479938507,
+      "val_mse": 0.8246500462293624,
+      "val_cosine": 0.9916013807058335
+    },
+    {
+      "step": 400,
+      "epoch": 2,
+      "loss_total": 1.0875047445297241,
+      "loss_state_mse": 0.3416455090045929,
+      "loss_state_cos": 0.0036499500274658203,
+      "loss_logit_kl": 1.587158441543579,
+      "loss_next_token_ce": 0.2689816951751709,
+      "val_mse": 0.4148391470313072,
+      "val_cosine": 0.9955664664506912
+    }
+  ],
+  "dataset_info": {
+    "hidden_dim": 2048,
+    "num_layers": 35,
+    "num_samples": 12800,
+    "target": "residual"
+  }
+}

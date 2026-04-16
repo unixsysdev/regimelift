@@ -1,0 +1,17 @@
+{
+  "train_config": "/home/marcel/Work/He-LMAS/helmas3n/configs/train_residual_layer34_last1.yaml",
+  "checkpoint": "/home/marcel/Work/He-LMAS/helmas3n/artifacts/reports/targeted_runs/checkpoints/layer34_last1/last.pt",
+  "extract_config": "/home/marcel/Work/He-LMAS/helmas3n/configs/extract_killtest40_holdout80.yaml",
+  "num_prompts": 1,
+  "max_new_tokens": 1,
+  "mean_low_prefill_ms": 615.8695910125971,
+  "mean_full_restart_ms": 254.88054199377075,
+  "mean_handoff_resume_ms": 309.54948300495744,
+  "mean_pipeline_low_plus_handoff_ms": 925.4190740175545,
+  "delta_pipeline_vs_full_restart_ms": 670.5385320237838,
+  "mean_uplift_match_h16": 1.0,
+  "mean_low_match_h16": 0.0,
+  "mean_low_prefill_mem_mb": 15486.33251953125,
+  "mean_full_restart_mem_mb": 15536.11181640625,
+  "mean_handoff_resume_mem_mb": 15559.4365234375
+}
