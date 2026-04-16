@@ -338,6 +338,7 @@ The current evidence justifies the following claims:
     \item the live handoff path is valid because identity equals proper no-patch exactly;
     \item local residual fit is insufficient as a success criterion;
     \item the first robust learned handoff site is \method{layer34,last1};
+    \item fixed-site objective ablation at \method{layer34,last1} improves continuation further, with the short-horizon objective reaching $h8=0.1328$ and $h16=0.0742$ on heldout80;
     \item same-site exact substitution is a reference patch, not a hard behavioral ceiling;
     \item intervention placement is a more important bottleneck than broad translator capacity.
 \end{itemize}
@@ -357,7 +358,7 @@ At some horizons the learned row exceeds the same-site exact-substitution refere
 \subsection{Inference relevance}
 The intended systems use-case is small-first decoding with selective escalation: run the reduced regime when possible, then hand off to fuller activation when continuation quality requires it. This paper establishes the handoff feasibility component, not a full serving policy.
 
-Cost accounting is therefore preliminary. In the current instrumentation-heavy sanity runs, low-regime latency and memory were not consistently lower than full regime (mean deltas were small and noisy). That means this paper should not be read as a throughput claim yet; it is a behavioral handoff claim. A production-relevant study still needs trigger policy design, cache-transfer overhead accounting, and clean end-to-end latency measurements under fixed hardware kernels.
+Cost accounting is therefore preliminary. In the completed heldout80 support run at \method{layer34,last1}, mean low-prefill cost was $283.3$ ms, mean full-restart cost was $3191.4$ ms, and mean low-plus-handoff pipeline cost was $3504.5$ ms, i.e., $+313.1$ ms slower than full restart in the current instrumentation-heavy setup. That means this paper should not be read as a throughput claim yet; it is a behavioral handoff claim. A production-relevant study still needs trigger policy design, cache-transfer overhead accounting, and clean end-to-end latency measurements under fixed hardware kernels.
 
 \subsection{Limitations}
 An earlier held-out validation accidentally used only 10 prompts. The evaluator was therefore hardened to fail fast on prompt-count mismatch and to write incremental artifacts, and the completed heldout80 rerun is now the canonical larger-sample result.
@@ -373,9 +374,9 @@ Three threats matter most at this stage.
 \end{itemize}
 
 \subsection{Next experimental priority}
-The next high-value experiment keeps the intervention fixed at \method{layer34,last1} and ablates training objectives (state-only, state+logit, heavier logit weighting, and short-horizon continuation-aware terms). This directly tests the current bottleneck: objective mismatch between local fit and rollout behavior.
+Fixed-site objective ablation has now been completed at \method{layer34,last1}. Among \texttt{state-only}, \texttt{state+logit}, \texttt{heavy-logit}, and \texttt{short-horizon} objectives, the short-horizon objective is the strongest on heldout80 continuation metrics.
 
-In parallel, the main generalization question is intermediate-regime transfer inside the same parent family (minimum $\rightarrow$ intermediate, intermediate $\rightarrow$ full). That experiment determines whether \method{layer34,last1} is a one-pair result or a broader regime-lift property.
+The next high-value experiment is intermediate-regime transfer inside the same parent family (minimum $\rightarrow$ intermediate, intermediate $\rightarrow$ full), with the intervention and objective fixed to the best current setting. That experiment determines whether \method{layer34,last1} is a one-pair result or a broader regime-lift property.
 
 \section{Reproducibility and run record}
 This repository keeps the paper tied to concrete experiment artifacts. Reproducibility rests on three pieces:
@@ -392,7 +393,7 @@ RegimeLift now has a stable empirical spine. The project no longer rests on the 
 Within Gemma 3n's nested E2B/E4B family, low-to-full regime uplift is behaviorally recoverable at a specific learned handoff site, and broad residual fitting alone is not enough to find that site.
 \end{quote}
 
-That is the main result of the current paper. The next step is not to widen the architecture search blindly. It is to run fixed-site objective ablations at \method{layer34,last1} and then test intermediate-regime generalization within the same Gemma 3n family before expanding to KV-level or flow-based methods.
+That is the main result of the current paper. The next step is not to widen the architecture search blindly. It is to hold the best fixed-site objective at \method{layer34,last1} and test intermediate-regime generalization within the same Gemma 3n family before expanding to KV-level or flow-based methods.
 
 \bibliographystyle{plain}
 \bibliography{references}

@@ -82,6 +82,12 @@ def _write_report(path: Path, rows: list[dict[str, Any]], horizons: list[int]) -
             return "--"
         return f"{float(v):.3f}"
 
+    def _num(row: dict[str, Any], key: str) -> float:
+        value = row.get(key, 0.0)
+        if value is None or value == "":
+            return 0.0
+        return float(value)
+
     lines: list[str] = []
     lines.append("# Objective Ablation @ layer34,last1")
     lines.append("")
@@ -93,9 +99,9 @@ def _write_report(path: Path, rows: list[dict[str, Any]], horizons: list[int]) -
     for row in rows:
         lines.append(
             f"| {row['variant']} | `{row['train_loss_mix']}` | "
-            f"{row.get('h1_uplift', 0.0):.6f} | {row.get('h4_uplift', 0.0):.6f} | "
-            f"{row.get('h8_uplift', 0.0):.6f} | {row.get('h16_uplift', 0.0):.6f} | "
-            f"{row.get('delta_h8', 0.0):.6f} | {row.get('delta_h16', 0.0):.6f} | "
+            f"{_num(row, 'h1_uplift'):.6f} | {_num(row, 'h4_uplift'):.6f} | "
+            f"{_num(row, 'h8_uplift'):.6f} | {_num(row, 'h16_uplift'):.6f} | "
+            f"{_num(row, 'delta_h8'):.6f} | {_num(row, 'delta_h16'):.6f} | "
             f"{_fmt(row.get('cost_per_prompt_ms_h16'))} | {_fmt(row.get('closure_reference_h8'))} |"
         )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

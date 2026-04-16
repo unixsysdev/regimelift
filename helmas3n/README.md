@@ -109,35 +109,24 @@ Each sample stores:
   - `h1=0.7750`, `h4=0.2031`, `h8=0.1156`, `h16=0.0641`
   - no-patch baseline: `h1=0.0375`, `h4=0.0250`, `h8=0.0172`, `h16=0.0133`
 - `targeted_mlp(layer16,last1)` does not generalize on heldout80.
+- Completed fixed-site objective ablation on heldout80:
+  - output: `artifacts/reports/objective_ablation_layer34_last1_holdout80/`
+  - winner: `residual_uplift_layer34_last1_short_horizon`
+  - winner metrics: `h1=0.9125`, `h4=0.2375`, `h8=0.1328`, `h16=0.0742`
+  - winner deltas: `delta_h8=+0.1016`, `delta_h16=+0.0484`
+- Completed learned-vs-reference diagnostics:
+  - output: `artifacts/reports/reference_vs_learned_layer34_last1/`
+  - summary: no-patch KL `10.3642`, reference KL `1.1980`, learned KL `2.6606`
+- Completed cost table support track:
+  - output: `artifacts/reports/cost_table_layer34_last1/`
+  - summary: mean low prefill `283.3 ms`, full restart `3191.4 ms`, pipeline (`low + handoff`) `3504.5 ms`
 
 ## Pending (active queue)
 
-Current execution:
-- Fixed-site objective ablation at `layer34,last1` is running against heldout80.
-- Output directory:
-  - `artifacts/reports/objective_ablation_layer34_last1_holdout80/`
-- Variants:
-  - `residual_uplift_layer34_last1_state_only`
-  - `residual_uplift_layer34_last1_state_logit`
-  - `residual_uplift_layer34_last1_heavy_logit`
-  - `residual_uplift_layer34_last1_short_horizon`
-
-Post-ablation acceptance checks:
-- Select winner using heldout80 `h8` and `h16` first.
-- Require winner to beat:
-  - `low_to_full_no_patch`
-  - current targeted baseline (`targeted_mlp(layer34,last1)`)
-- Record closure-to-reference for `oracle_layer34` at `h8/h16`.
-
-Next support runs (after winner is locked):
-- Learned-vs-reference diagnostics:
-  - `python scripts/analyze_reference_vs_learned.py --train-config configs/train_residual_layer34_last1.yaml --extract-config configs/extract_killtest40_holdout80.yaml`
-- Cost/latency table:
-  - `python scripts/measure_handoff_costs.py --train-config configs/train_residual_layer34_last1.yaml --extract-config configs/extract_killtest40_holdout80.yaml --max-new-tokens 16`
-
-Finalization after support runs:
+Current queue:
 - Refresh paper figures/tables and `paper/main.pdf`.
-- Sync README/paper claims to the new ablation winner.
+- Sync experiment docs and paper claims to objective-ablation/support-track outputs.
+- Re-run CI and verify rolling paper release artifact sync.
 
 ## Notes
 

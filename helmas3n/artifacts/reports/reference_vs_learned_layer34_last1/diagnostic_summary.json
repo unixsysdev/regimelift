@@ -1,0 +1,27 @@
+{
+  "train_config": "/home/marcel/Work/He-LMAS/helmas3n/configs/train_residual_layer34_last1_short_horizon.yaml",
+  "checkpoint": "/home/marcel/Work/He-LMAS/helmas3n/artifacts/reports/objective_ablation_layer34_last1/checkpoints/short_horizon/last.pt",
+  "extract_config": "/home/marcel/Work/He-LMAS/helmas3n/configs/extract_killtest40_holdout80.yaml",
+  "num_prompts": 80,
+  "layer": 34,
+  "rows": [
+    {
+      "method": "no_patch",
+      "mean_kl_full_to_method": 10.36422744244337,
+      "mean_top1_match_to_full": 0.0375,
+      "mean_final_hidden_cos_to_full": 0.3539895748719573
+    },
+    {
+      "method": "reference_patch",
+      "mean_kl_full_to_method": 1.1979726053774358,
+      "mean_top1_match_to_full": 0.3875,
+      "mean_final_hidden_cos_to_full": 0.3539895748719573
+    },
+    {
+      "method": "learned_patch",
+      "mean_kl_full_to_method": 2.6605852454900742,
+      "mean_top1_match_to_full": 0.2875,
+      "mean_final_hidden_cos_to_full": 0.3539895748719573
+    }
+  ]
+}
