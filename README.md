@@ -38,10 +38,10 @@ Completed in this phase:
   - output: `helmas3n/artifacts/reports/cost_table_layer34_last1/`
   - current result: pipeline (`low prefill + handoff`) is slower than full restart in this instrumentation-heavy setup.
 
-Remaining queue:
-- Regenerate paper assets and PDF from the latest result artifacts.
-- Update experiment-facing docs under `helmas3n/experiments/` with objective-ablation and support-track summaries.
-- Push synced paper artifact and confirm rolling release on CI.
+Next research queue:
+- Run intermediate-regime transfer experiments (`minimum -> intermediate`, `intermediate -> full`) with the fixed winner setting.
+- Expand held-out prompt diversity beyond the current structured heldout80 split.
+- Revisit serving policy and latency with lower-overhead runtime instrumentation.
 
 ## Where to start reading
 

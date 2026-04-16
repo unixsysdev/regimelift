@@ -121,12 +121,11 @@ Each sample stores:
   - output: `artifacts/reports/cost_table_layer34_last1/`
   - summary: mean low prefill `283.3 ms`, full restart `3191.4 ms`, pipeline (`low + handoff`) `3504.5 ms`
 
-## Pending (active queue)
+## Next queue
 
-Current queue:
-- Refresh paper figures/tables and `paper/main.pdf`.
-- Sync experiment docs and paper claims to objective-ablation/support-track outputs.
-- Re-run CI and verify rolling paper release artifact sync.
+- Intermediate-regime transfer with fixed winner setting (`layer34,last1` + `short_horizon` objective).
+- Larger held-out diversity beyond the current structured heldout80 pool.
+- Lower-overhead systems evaluation for serving relevance (trigger policy + cache-transfer accounting).
 
 ## Notes
 
