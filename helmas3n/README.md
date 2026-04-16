@@ -44,10 +44,9 @@ A conditional flow module is included only as a phase-2 refinement placeholder.
   - metrics: `h1=0.9125`, `h4=0.2375`, `h8=0.1328`, `h16=0.0742`
 - Intermediate → full transfer (targeted site study):
   - path: `artifacts/reports/intermediate_full_targeted_site_study_v1/`
-  - `layer34,last1` remains effective
-  - h8: full recovery (error → 0)
-  - h16: partial recovery
-  - broad MLP and identity: no improvement
+  - no-patch baseline already near-zero (`h8=0.00625`); learned map does not improve (delta_h8=-0.00625)
+  - oracle reference at layer34 shows real gains, but the regime crossing is near-trivial without correction
+  - interpretation: minimum→full is the hard transition; minimum→intermediate is the meaningful next experiment
 
 ## Next queue
 

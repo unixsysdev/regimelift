@@ -21,7 +21,7 @@ Completed evidence so far:
 - The reference rows are reference patches, not ceilings.
 - Completed heldout80: `targeted_mlp(layer34,last1)` reached `h8=0.1156`, `h16=0.0641` vs no-patch `h8=0.0172`, `h16=0.0133`.
 - Completed fixed-site objective ablation: `residual_uplift_layer34_last1_short_horizon` reached `h8=0.1328`, `h16=0.0742`.
-- Completed intermediate → full transfer: the same late handoff site remains effective beyond the original minimum → full pair.
+- Completed intermediate → full transfer: the intermediate→full gap is already near-zero under the current runner — no behavioral gap for the learned map to close. Confirms minimum→full as the substantive hard transition.
 
 Latest validation artifacts:
 - `helmas3n/artifacts/reports/targeted_site_study_v5_holdout80/`
@@ -44,8 +44,8 @@ Completed in this phase:
 - Intermediate-regime transfer (partial):
   - completed: `intermediate -> full`
   - output: `helmas3n/artifacts/reports/intermediate_full_targeted_site_study_v1/`
-  - result: at `layer34,last1`, targeted uplift reduces `h8` error from `0.00625` to `0.00000` and `h16` error from `0.003125` to `0.001563`
-  - broad MLP and identity leave the baseline unchanged
+  - result: no-patch baseline is already near-zero (`h8=0.00625`); learned map does not improve on it (delta_h8=-0.00625). Oracle reference at layer34 does show gains, but the regime crossing is already near-trivial without correction.
+  - interpretation: minimum→full is the hard transition; minimum→intermediate is the meaningful next test.
 
 Next research queue:
 - Run `minimum -> intermediate` with the fixed winner setting to complete the regime triangle.

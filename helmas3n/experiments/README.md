@@ -20,9 +20,7 @@ This directory is the reader-facing index for completed RegimeLift experiments.
 
 - `intermediate_full_targeted_site_study_v1` (runtime artifact set):
   - path: `helmas3n/artifacts/reports/intermediate_full_targeted_site_study_v1/`
-  - result:
-    - strong recovery at h8 (error → 0)
-    - partial recovery at h16
-  - note: confirms portability of layer34 intervention beyond minimum→full
+  - result: no-patch baseline already near-zero (`h8=0.00625`); learned map does not improve (delta_h8=-0.00625); oracle reference at layer34 does show gains
+  - note: intermediate→full is a near-trivial regime crossing under the current runner — no behavioral gap for the learned map to close; minimum→intermediate is the meaningful next test
 
 Runtime outputs are written under `helmas3n/artifacts/reports/`.
