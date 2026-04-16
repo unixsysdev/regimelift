@@ -112,11 +112,12 @@ where $c$ is optional conditioning metadata such as layer index, token position,
 The project began with broad layer-conditioned translators, but the later evidence showed that targeting a specific site matters more than fitting a globally smooth map.
 
 \subsection{Training objective}
-For residual uplift, the current objective is the weighted combination
+For residual uplift, the objective family is the weighted combination
 \[
 \mathcal{L}
 = \lambda_{\text{state}} \mathcal{L}_{\text{state}}
-+ \lambda_{\text{logit}} \mathcal{L}_{\text{logit}},
++ \lambda_{\text{logit}} \mathcal{L}_{\text{logit}}
++ \lambda_{\text{ce}} \mathcal{L}_{\text{ce}},
 \]
 with
 \[
@@ -131,6 +132,21 @@ and
 p^{(\full)}_{t+1} \,\middle\|\, p^{(\text{uplift})}_{t+1}
 \right).
 \]
+The short-horizon cross-entropy term is
+\[
+\mathcal{L}_{\text{ce}}
+= -\log p^{(\text{uplift})}_{t+1}\!\left(y^{(\full)}_{t+1}\right),
+\]
+where the target token $y^{(\full)}_{t+1}$ is taken from the fuller-regime next-token decision under the same prefix.
+
+In the completed fixed-site ablation at \method{layer34,last1}, the best current setting is
+\[
+\lambda_{\text{state}}=1.0,\quad
+\lambda_{\cos}=0.2,\quad
+\lambda_{\text{logit}}=0.3,\quad
+\lambda_{\text{ce}}=1.0,
+\]
+corresponding to the \texttt{short-horizon} objective reported later in Table~\ref{tab:objective-ablation}.
 
 The deployment criterion is behavioral rather than geometric: improved continuation after handoff. Let $y^{(\full)}_{t+i}$ denote greedy continuation under the fuller regime and $\hat{y}_{t+i}$ the continuation after patching the reduced regime and resuming under the fuller regime. For horizon $H \in \{1,4,8,16\}$, define
 \[
@@ -302,6 +318,35 @@ The strongest completed result is the targeted site study summarized in Table~\r
 \end{figure}
 
 The most important row in Table~\ref{tab:core} is \method{Targeted MLP @ layer34}. On the completed heldout80 split it achieves Match@1 of 0.775, Match@4 of 0.203, Match@8 of 0.116, and Match@16 of 0.064. No other learned row comes close. Importantly, \method{layer16,last1} looked plausible in pilot sweeps and then failed under stronger validation, which is exactly why targeted-site validation was necessary. This is the first point in the project where a learned intervention does what the project is supposed to do: materially recover continuation behavior on held-out prompts.
+
+\subsection{Fixed-site objective ablation}
+The objective-ablation phase holds the intervention fixed at \method{layer34,last1} and changes only loss composition. Table~\ref{tab:objective-ablation} exposes the full matrix that was previously summarized in prose: \texttt{state-only}, \texttt{state+logit}, \texttt{heavy-logit}, and \texttt{short-horizon}. The ranking is consistent across horizons and deltas: the short-horizon objective is strongest, heavy-logit is second, and state-only is weakest.
+
+\begin{table}[H]
+    \centering
+    \small
+    \caption{Heldout80 objective-ablation matrix at fixed \method{layer34,last1}. Deltas are measured against the same no-patch baseline.}
+    \resizebox{\linewidth}{!}{\input{generated/objective_ablation_table.tex}}
+    \label{tab:objective-ablation}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\linewidth]{figures/objective_ablation_delta.pdf}
+    \caption{Objective-ablation gains over no-patch at horizons 8 and 16. The short-horizon objective provides the strongest behavioral recovery under a fixed intervention site.}
+    \label{fig:objective-ablation}
+\end{figure}
+
+\subsection{Full-like versus low-like alignment}
+Table~\ref{tab:full-vs-low} addresses whether learned uplift is merely perturbing continuation arbitrarily or moving behavior toward fuller-regime decoding. The targeted \method{layer34} row raises match-to-full-native strongly over no-patch and broad MLP while keeping match-to-low-native low, which is consistent with the intended directional effect. By contrast, broad MLP remains closer to low-native behavior than to full-native behavior.
+
+\begin{table}[H]
+    \centering
+    \small
+    \caption{Next-token behavioral alignment at \method{layer34,last1}: full-native versus low-native.}
+    \resizebox{\linewidth}{!}{\input{generated/full_vs_low_table.tex}}
+    \label{tab:full-vs-low}
+\end{table}
 
 \subsection{Layer sensitivity}
 The corrected layer sweep showed that continuation recovery is controlled by a narrow intervention surface. Earlier pilot impressions suggested \method{layer16} might be the right target. The controlled sweep falsified that as a stable main site and instead showed that the strongest useful region lies substantially later in the stack.

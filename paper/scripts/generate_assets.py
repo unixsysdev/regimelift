@@ -19,6 +19,8 @@ LAYER_SWEEP_ROWS = REPO_ROOT / "helmas3n" / "artifacts" / "reports" / "layer_swe
 SUFFIX_SPAN_ROWS = REPO_ROOT / "helmas3n" / "artifacts" / "reports" / "suffix_span_sweep_v1" / "suffix_span_summary.csv"
 SANITY_REPORT = REPO_ROOT / "helmas3n" / "artifacts" / "reports" / "killtest_v3" / "sanity" / "sanity_report.json"
 SANITY_LAYER_ROWS = REPO_ROOT / "helmas3n" / "artifacts" / "reports" / "killtest_v3" / "sanity" / "per_layer_metrics.csv"
+OBJECTIVE_ABLATION_ROWS = REPO_ROOT / "helmas3n" / "artifacts" / "reports" / "objective_ablation_layer34_last1_holdout80" / "objective_ablation_rows.csv"
+FULL_VS_LOW_SUMMARY = REPO_ROOT / "helmas3n" / "artifacts" / "reports" / "full_vs_low_alignment_layer34_last1" / "full_vs_low_summary.json"
 
 TARGETED_METHOD_ORDER = [
     ("low_to_full_no_patch", "layer34", "No patch"),
@@ -32,6 +34,12 @@ TARGETED_METHOD_ORDER = [
 ]
 
 HORIZONS = [1, 4, 8, 16]
+OBJECTIVE_ORDER = [
+    ("residual_uplift_layer34_last1_state_only", "State-only"),
+    ("residual_uplift_layer34_last1_state_logit", "State + logit"),
+    ("residual_uplift_layer34_last1_heavy_logit", "Heavy-logit"),
+    ("residual_uplift_layer34_last1_short_horizon", "Short-horizon"),
+]
 
 
 def read_csv(path: Path) -> list[dict[str, str]]:
@@ -123,6 +131,58 @@ def write_layer_sweep_summary_table(rows: list[dict[str, str]]) -> None:
     lines.append(r"\bottomrule")
     lines.append(r"\end{tabular}")
     (GEN_DIR / "layer_sweep_summary_table.tex").write_text("\n".join(lines) + "\n")
+
+
+def write_objective_ablation_table(rows: list[dict[str, str]]) -> None:
+    lines: list[str] = []
+    lines.append(r"\begin{tabular}{lcccccc}")
+    lines.append(r"\toprule")
+    lines.append(r"Objective & h1 & h4 & h8 & h16 & $\Delta$h8 & $\Delta$h16 \\")
+    lines.append(r"\midrule")
+    by_variant = {row["variant"]: row for row in rows}
+    for variant, label in OBJECTIVE_ORDER:
+        row = by_variant[variant]
+        vals = [
+            fmt(row["h1_uplift"]),
+            fmt(row["h4_uplift"]),
+            fmt(row["h8_uplift"]),
+            fmt(row["h16_uplift"]),
+            fmt(row["delta_h8"]),
+            fmt(row["delta_h16"]),
+        ]
+        lines.append(latex_escape(label) + " & " + " & ".join(vals) + r" \\")
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+    (GEN_DIR / "objective_ablation_table.tex").write_text("\n".join(lines) + "\n")
+
+
+def write_full_vs_low_table(summary: dict[str, Any]) -> None:
+    label_map = {
+        "no_patch": "No patch",
+        "reference_layer34": "Reference layer34",
+        "broad_mlp": "Broad MLP",
+        "targeted_layer34": "Targeted layer34",
+    }
+    order = ["no_patch", "reference_layer34", "broad_mlp", "targeted_layer34"]
+    rows = {r["method"]: r for r in summary["rows"]}
+
+    lines: list[str] = []
+    lines.append(r"\begin{tabular}{lcccc}")
+    lines.append(r"\toprule")
+    lines.append(r"Method & Match to full-native & Match to low-native & KL(full||method) & KL(low||method) \\")
+    lines.append(r"\midrule")
+    for method in order:
+        row = rows[method]
+        vals = [
+            fmt(row["mean_top1_match_to_full"]),
+            fmt(row["mean_top1_match_to_low"]),
+            fmt(row["mean_kl_full_to_method"]),
+            fmt(row["mean_kl_low_to_method"]),
+        ]
+        lines.append(latex_escape(label_map[method]) + " & " + " & ".join(vals) + r" \\")
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+    (GEN_DIR / "full_vs_low_table.tex").write_text("\n".join(lines) + "\n")
 
 
 def write_regime_separation_table(report: dict[str, Any]) -> None:
@@ -230,6 +290,30 @@ def plot_targeted_delta_bars(rows: list[dict[str, str]]) -> None:
     fig.tight_layout()
     fig.savefig(FIG_DIR / "targeted_delta_summary.png", dpi=220, bbox_inches="tight")
     fig.savefig(FIG_DIR / "targeted_delta_summary.pdf", bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_objective_ablation(rows: list[dict[str, str]]) -> None:
+    by_variant = {r["variant"]: r for r in rows}
+    labels = [label for _, label in OBJECTIVE_ORDER]
+    h8_vals = [float(by_variant[v]["delta_h8"]) for v, _ in OBJECTIVE_ORDER]
+    h16_vals = [float(by_variant[v]["delta_h16"]) for v, _ in OBJECTIVE_ORDER]
+
+    x = list(range(len(labels)))
+    width = 0.36
+    fig, ax = plt.subplots(1, 1, figsize=(8.4, 4.6))
+    ax.bar([i - width / 2 for i in x], h8_vals, width=width, label="Delta h8 vs no patch", color="#2ca02c")
+    ax.bar([i + width / 2 for i in x], h16_vals, width=width, label="Delta h16 vs no patch", color="#1f77b4")
+    ax.axhline(0.0, color="#444444", linewidth=1.0, alpha=0.8)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=12, ha="right")
+    ax.set_ylabel("Absolute continuation gain")
+    ax.set_title("Fixed-site objective ablation at layer34,last1 (heldout80)")
+    ax.grid(True, axis="y", alpha=0.25)
+    ax.legend(loc="upper left", fontsize=8, frameon=False)
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "objective_ablation_delta.png", dpi=220, bbox_inches="tight")
+    fig.savefig(FIG_DIR / "objective_ablation_delta.pdf", bbox_inches="tight")
     plt.close(fig)
 
 
@@ -368,11 +452,15 @@ def main() -> None:
     targeted_rows = read_csv(TARGETED_ROWS)
     layer_rows = read_csv(LAYER_SWEEP_ROWS)
     suffix_rows = read_csv(SUFFIX_SPAN_ROWS)
+    objective_rows = read_csv(OBJECTIVE_ABLATION_ROWS)
     sanity_report = json.loads(SANITY_REPORT.read_text())
     sanity_layer_rows = read_csv(SANITY_LAYER_ROWS)
+    full_vs_low_summary = json.loads(FULL_VS_LOW_SUMMARY.read_text())
 
     write_targeted_core_table(targeted_rows)
     write_layer_sweep_summary_table(layer_rows)
+    write_objective_ablation_table(objective_rows)
+    write_full_vs_low_table(full_vs_low_summary)
     write_regime_separation_table(sanity_report)
     write_regime_controls_table(sanity_report)
     write_experiment_timeline()
@@ -380,6 +468,7 @@ def main() -> None:
 
     plot_targeted_curves(targeted_rows)
     plot_targeted_delta_bars(targeted_rows)
+    plot_objective_ablation(objective_rows)
     plot_layer_sweep(layer_rows)
     plot_suffix_span(suffix_rows)
     plot_regime_separation(sanity_layer_rows)

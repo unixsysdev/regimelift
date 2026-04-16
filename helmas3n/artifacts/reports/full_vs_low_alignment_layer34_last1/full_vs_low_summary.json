@@ -1,0 +1,35 @@
+{
+  "extract_config": "/home/marcel/Work/He-LMAS/helmas3n/configs/extract_killtest40_holdout80.yaml",
+  "num_prompts": 80,
+  "layer": 34,
+  "rows": [
+    {
+      "method": "no_patch",
+      "mean_top1_match_to_full": 0.0375,
+      "mean_top1_match_to_low": 0.0,
+      "mean_kl_full_to_method": 10.36422744244337,
+      "mean_kl_low_to_method": 15.930509209632874
+    },
+    {
+      "method": "reference_layer34",
+      "mean_top1_match_to_full": 0.3875,
+      "mean_top1_match_to_low": 0.0375,
+      "mean_kl_full_to_method": 1.1979726053774358,
+      "mean_kl_low_to_method": 9.800477722287178
+    },
+    {
+      "method": "broad_mlp",
+      "mean_top1_match_to_full": 0.0625,
+      "mean_top1_match_to_low": 0.2125,
+      "mean_kl_full_to_method": 7.455112259089947,
+      "mean_kl_low_to_method": 3.9316310063004494
+    },
+    {
+      "method": "targeted_layer34",
+      "mean_top1_match_to_full": 0.2875,
+      "mean_top1_match_to_low": 0.025,
+      "mean_kl_full_to_method": 2.6605852454900742,
+      "mean_kl_low_to_method": 4.552104891091585
+    }
+  ]
+}
